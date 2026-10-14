@@ -1,0 +1,378 @@
+{
+ "comment": "Сгенерировано: python -m hubd watchlist --museum /home/lain/.hermes/profiles/libraressa/workspace/lost-tech-museum --out watchlist.json",
+ "sources": [
+  {
+   "url": "https://export.arxiv.org/api/query?search_query=abs:%22obsolete%22+AND+abs:%22protocol%22&max_results=20",
+   "topic": "arxiv/obsolete-protocols",
+   "note": "arXiv: свежие статьи про устаревшие протоколы; у API нет ETag — поэтому allow_volatile",
+   "allow_volatile": true,
+   "museum": []
+  },
+  {
+   "url": "https://datatracker.ietf.org/feed/rfc/",
+   "topic": "ietf/rfc-feed",
+   "note": "лента новых RFC в дататрекере: дешевле, чем индекс RFC целиком (13.7 МБ)",
+   "museum": []
+  },
+  {
+   "url": "https://kostyk348.github.io/lost-tech-museum/digests/rfc-graveyard/",
+   "topic": "museum/digest/rfc-graveyard",
+   "note": "дайджест, из которого вырос hubd (ipmulticast, pubsubhubbub, rsvp, atmip)",
+   "museum": []
+  },
+  {
+   "url": "https://kostyk348.github.io/lost-tech-museum/",
+   "topic": "museum/site",
+   "note": "главная музея: новая публикация архива меняет ETag страницы",
+   "museum": []
+  },
+  {
+   "url": "http://pubsubhubbub.github.io/PubSubHubbub/pubsubhubbub-core-0.4.html",
+   "topic": "rfc-graveyard/pubsubhubbub",
+   "note": "первоисточник записи «PubSubHubbub → WebSub — pubsub, который не стал слоем»",
+   "museum": [
+    "pubsubhubbub"
+   ]
+  },
+  {
+   "url": "https://www.w3.org/TR/websub/",
+   "topic": "rfc-graveyard/pubsubhubbub",
+   "note": "первоисточник записи «PubSubHubbub → WebSub — pubsub, который не стал слоем»",
+   "museum": [
+    "pubsubhubbub"
+   ]
+  },
+  {
+   "url": "https://www.oasis-open.org/committees/uddi-spec/doc/spec/v3/uddi-v3.0.2-20041019.htm",
+   "topic": "rfc-graveyard/uddi",
+   "note": "первоисточник записи «UDDI и UDDI Business Registry — публичный каталог бизнесов»",
+   "museum": [
+    "uddi"
+   ]
+  },
+  {
+   "url": "https://dvcs.w3.org/hg/dap/raw-file/default/wi-addendum-local-services/NOTE.src.html",
+   "topic": "rfc-graveyard/webintents",
+   "note": "первоисточник записи «Web Intents — выбрать исполнителя вместо endpoint»",
+   "museum": [
+    "webintents"
+   ]
+  },
+  {
+   "url": "https://www.w3.org/TR/web-intents/",
+   "topic": "rfc-graveyard/webintents",
+   "note": "первоисточник записи «Web Intents — выбрать исполнителя вместо endpoint»",
+   "museum": [
+    "webintents"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/feed/document-changes/rfc1112/",
+   "topic": "rfc/rfc1112/changes",
+   "note": "лента изменений RFC1112 (ipmulticast: IP multicast и MBone — групповая доставка)",
+   "museum": [
+    "ipmulticast"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/api/v1/doc/document/rfc1112/",
+   "topic": "rfc/rfc1112/status",
+   "note": "статус RFC1112 в дататрекере (ipmulticast: IP multicast и MBone — групповая доставка)",
+   "museum": [
+    "ipmulticast"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/feed/document-changes/rfc1347/",
+   "topic": "rfc/rfc1347/changes",
+   "note": "лента изменений RFC1347 (tuba: TUBA — TCP/UDP поверх CLNP)",
+   "museum": [
+    "tuba"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/api/v1/doc/document/rfc1347/",
+   "topic": "rfc/rfc1347/status",
+   "note": "статус RFC1347 в дататрекере (tuba: TUBA — TCP/UDP поверх CLNP)",
+   "museum": [
+    "tuba"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/feed/document-changes/rfc1577/",
+   "topic": "rfc/rfc1577/changes",
+   "note": "лента изменений RFC1577 (atmip: Classical IP over ATM — и обещание однородной сети)",
+   "museum": [
+    "atmip"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/api/v1/doc/document/rfc1577/",
+   "topic": "rfc/rfc1577/status",
+   "note": "статус RFC1577 в дататрекере (atmip: Classical IP over ATM — и обещание однородной сети)",
+   "museum": [
+    "atmip"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/feed/document-changes/rfc1707/",
+   "topic": "rfc/rfc1707/changes",
+   "note": "лента изменений RFC1707 (catnip: CATNIP — один заголовок для OSI, IP и IPX)",
+   "museum": [
+    "catnip"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/api/v1/doc/document/rfc1707/",
+   "topic": "rfc/rfc1707/status",
+   "note": "статус RFC1707 в дататрекере (catnip: CATNIP — один заголовок для OSI, IP и IPX)",
+   "museum": [
+    "catnip"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/feed/document-changes/rfc1710/",
+   "topic": "rfc/rfc1710/changes",
+   "note": "лента изменений RFC1710 (sipp: SIPP 64-bit — победитель, чьи решения не дожили)",
+   "museum": [
+    "sipp"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/api/v1/doc/document/rfc1710/",
+   "topic": "rfc/rfc1710/status",
+   "note": "статус RFC1710 в дататрекере (sipp: SIPP 64-bit — победитель, чьи решения не дожили)",
+   "museum": [
+    "sipp"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/feed/document-changes/rfc1752/",
+   "topic": "rfc/rfc1752/changes",
+   "note": "лента изменений RFC1752 (tuba: TUBA — TCP/UDP поверх CLNP)",
+   "museum": [
+    "tuba",
+    "catnip",
+    "sipp"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/api/v1/doc/document/rfc1752/",
+   "topic": "rfc/rfc1752/status",
+   "note": "статус RFC1752 в дататрекере (tuba: TUBA — TCP/UDP поверх CLNP)",
+   "museum": [
+    "tuba",
+    "catnip",
+    "sipp"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/feed/document-changes/rfc1753/",
+   "topic": "rfc/rfc1753/changes",
+   "note": "лента изменений RFC1753 (nimrod: Nimrod — маршрутизация по топологии, а не по адресам)",
+   "museum": [
+    "nimrod"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/api/v1/doc/document/rfc1753/",
+   "topic": "rfc/rfc1753/status",
+   "note": "статус RFC1753 в дататрекере (nimrod: Nimrod — маршрутизация по топологии, а не по адресам)",
+   "museum": [
+    "nimrod"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/feed/document-changes/rfc1835/",
+   "topic": "rfc/rfc1835/changes",
+   "note": "лента изменений RFC1835 (whoispp: WHOIS++ и CRISP — распределённый справочник)",
+   "museum": [
+    "whoispp"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/api/v1/doc/document/rfc1835/",
+   "topic": "rfc/rfc1835/status",
+   "note": "статус RFC1835 в дататрекере (whoispp: WHOIS++ и CRISP — распределённый справочник)",
+   "museum": [
+    "whoispp"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/feed/document-changes/rfc1939/",
+   "topic": "rfc/rfc1939/changes",
+   "note": "лента изменений RFC1939 (pop2: POP2 — почта, которую скачивают и удаляют)",
+   "museum": [
+    "pop2"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/api/v1/doc/document/rfc1939/",
+   "topic": "rfc/rfc1939/status",
+   "note": "статус RFC1939 в дататрекере (pop2: POP2 — почта, которую скачивают и удаляют)",
+   "museum": [
+    "pop2"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/feed/document-changes/rfc2156/",
+   "topic": "rfc/rfc2156/changes",
+   "note": "лента изменений RFC2156 (mixer: X.400 ↔ RFC 822: MIXER и семь редакций моста)",
+   "museum": [
+    "mixer"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/api/v1/doc/document/rfc2156/",
+   "topic": "rfc/rfc2156/status",
+   "note": "статус RFC2156 в дататрекере (mixer: X.400 ↔ RFC 822: MIXER и семь редакций моста)",
+   "museum": [
+    "mixer"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/feed/document-changes/rfc2205/",
+   "topic": "rfc/rfc2205/changes",
+   "note": "лента изменений RFC2205 (rsvp: RSVP / IntServ — резервирование на каждый поток)",
+   "museum": [
+    "rsvp"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/api/v1/doc/document/rfc2205/",
+   "topic": "rfc/rfc2205/status",
+   "note": "статус RFC2205 в дататрекере (rsvp: RSVP / IntServ — резервирование на каждый поток)",
+   "museum": [
+    "rsvp"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/feed/document-changes/rfc2225/",
+   "topic": "rfc/rfc2225/changes",
+   "note": "лента изменений RFC2225 (atmip: Classical IP over ATM — и обещание однородной сети)",
+   "museum": [
+    "atmip"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/api/v1/doc/document/rfc2225/",
+   "topic": "rfc/rfc2225/status",
+   "note": "статус RFC2225 в дататрекере (atmip: Classical IP over ATM — и обещание однородной сети)",
+   "museum": [
+    "atmip"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/feed/document-changes/rfc3170/",
+   "topic": "rfc/rfc3170/changes",
+   "note": "лента изменений RFC3170 (ipmulticast: IP multicast и MBone — групповая доставка)",
+   "museum": [
+    "ipmulticast"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/api/v1/doc/document/rfc3170/",
+   "topic": "rfc/rfc3170/status",
+   "note": "статус RFC3170 в дататрекере (ipmulticast: IP multicast и MBone — групповая доставка)",
+   "museum": [
+    "ipmulticast"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/feed/document-changes/rfc3209/",
+   "topic": "rfc/rfc3209/changes",
+   "note": "лента изменений RFC3209 (rsvp: RSVP / IntServ — резервирование на каждый поток)",
+   "museum": [
+    "rsvp"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/api/v1/doc/document/rfc3209/",
+   "topic": "rfc/rfc3209/status",
+   "note": "статус RFC3209 в дататрекере (rsvp: RSVP / IntServ — резервирование на каждый поток)",
+   "museum": [
+    "rsvp"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/feed/document-changes/rfc3707/",
+   "topic": "rfc/rfc3707/changes",
+   "note": "лента изменений RFC3707 (whoispp: WHOIS++ и CRISP — распределённый справочник)",
+   "museum": [
+    "whoispp"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/api/v1/doc/document/rfc3707/",
+   "topic": "rfc/rfc3707/status",
+   "note": "статус RFC3707 в дататрекере (whoispp: WHOIS++ и CRISP — распределённый справочник)",
+   "museum": [
+    "whoispp"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/feed/document-changes/rfc3912/",
+   "topic": "rfc/rfc3912/changes",
+   "note": "лента изменений RFC3912 (whoispp: WHOIS++ и CRISP — распределённый справочник)",
+   "museum": [
+    "whoispp"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/api/v1/doc/document/rfc3912/",
+   "topic": "rfc/rfc3912/status",
+   "note": "статус RFC3912 в дататрекере (whoispp: WHOIS++ и CRISP — распределённый справочник)",
+   "museum": [
+    "whoispp"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/feed/document-changes/rfc8030/",
+   "topic": "rfc/rfc8030/changes",
+   "note": "лента изменений RFC8030 (pubsubhubbub: PubSubHubbub → WebSub — pubsub, который не стал слоем)",
+   "museum": [
+    "pubsubhubbub"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/api/v1/doc/document/rfc8030/",
+   "topic": "rfc/rfc8030/status",
+   "note": "статус RFC8030 в дататрекере (pubsubhubbub: PubSubHubbub → WebSub — pubsub, который не стал слоем)",
+   "museum": [
+    "pubsubhubbub"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/feed/document-changes/rfc868/",
+   "topic": "rfc/rfc868/changes",
+   "note": "лента изменений RFC868 (time868: Time Protocol — формально стандарт, де-факто музей)",
+   "museum": [
+    "time868"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/api/v1/doc/document/rfc868/",
+   "topic": "rfc/rfc868/status",
+   "note": "статус RFC868 в дататрекере (time868: Time Protocol — формально стандарт, де-факто музей)",
+   "museum": [
+    "time868"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/feed/document-changes/rfc937/",
+   "topic": "rfc/rfc937/changes",
+   "note": "лента изменений RFC937 (pop2: POP2 — почта, которую скачивают и удаляют)",
+   "museum": [
+    "pop2"
+   ]
+  },
+  {
+   "url": "https://datatracker.ietf.org/api/v1/doc/document/rfc937/",
+   "topic": "rfc/rfc937/status",
+   "note": "статус RFC937 в дататрекере (pop2: POP2 — почта, которую скачивают и удаляют)",
+   "museum": [
+    "pop2"
+   ]
+  }
+ ]
+}

@@ -5,6 +5,7 @@ import os
 import tempfile
 import time
 import unittest
+import urllib.error
 
 from hubd.scan import Watcher, load_watchlist
 
@@ -135,6 +136,45 @@ class ScanTestCase(unittest.TestCase):
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["payload"], b"two")
         self.assertEqual(watcher.last_suppressed, [])
+
+    # --- живучесть обхода ----------------------------------------------------
+    def test_network_failure_is_recorded_and_does_not_break_scan(self):
+        class Broken(FakeSource):
+            def __call__(self, url, headers):
+                raise urllib.error.URLError("сеть недоступна")
+
+        watcher = Watcher(self.state, fetcher=Broken(), min_interval=0)
+        watchlist = [{"url": "http://example.invalid/feed", "topic": "feed"}]
+        self.assertEqual(watcher.scan(watchlist), [])
+        self.assertEqual(len(watcher.last_errors), 1)
+        self.assertIn("недоступен", watcher.last_errors[0]["error"])
+        self.assertEqual(watcher.state["http://example.invalid/feed"]["status"], 0)
+
+    def test_broken_source_does_not_hide_change_from_the_next_one(self):
+        class Mixed(FakeSource):
+            def __call__(self, url, headers):
+                if "broken" in url:
+                    raise OSError("соединение сброшено")
+                return super().__call__(url, headers)
+
+        src = Mixed()
+        src.answers = [(200, {"ETag": '"a"'}, b"old"), (200, {"ETag": '"b"'}, b"new")]
+        watcher = Watcher(self.state, fetcher=src, min_interval=0)
+        watchlist = [{"url": "http://example.invalid/broken", "topic": "broken"},
+                     {"url": "http://example.invalid/fine", "topic": "fine"}]
+        watcher.scan(watchlist)
+        events = watcher.scan(watchlist)
+        self.assertEqual([e["topic"] for e in events], ["fine"])
+        self.assertEqual(len(watcher.last_errors), 1)
+        self.assertEqual(watcher.last_errors[0]["topic"], "broken")
+
+    def test_source_on_dead_port_is_recorded_with_the_real_fetcher(self):
+        """Настоящий сетевой сбой (порт закрыт) — результат обхода, а не исключение."""
+        watcher = Watcher(self.state, min_interval=0)
+        result = watcher.check("http://127.0.0.1:1/nope")
+        self.assertEqual(result["status"], 0)
+        self.assertIn("недоступен", result["error"])
+        self.assertFalse(result["changed"])
 
 
 if __name__ == "__main__":

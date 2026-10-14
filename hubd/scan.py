@@ -38,6 +38,7 @@ class Watcher:
         self.user_agent = user_agent
         self.state: dict[str, dict] = {}
         self.last_suppressed: list[dict] = []
+        self.last_errors: list[dict] = []
         self._last_host_hit: dict[str, float] = {}
         self.load()
 
@@ -73,7 +74,11 @@ class Watcher:
         return waited
 
     def check(self, url: str) -> dict:
-        """Один источник: условный GET, сверка с отпечатком содержимого."""
+        """Один источник: условный GET, сверка с отпечатком содержимого.
+
+        Сбой источника (сеть, 5xx, 404) — это результат обхода, а не повод уронить весь скан:
+        он записывается в состояние и возвращается вызывающему как ошибка источника.
+        """
         entry = self.state.setdefault(url, {"hash": None, "checks": 0, "changes": 0})
         headers = {"User-Agent": self.user_agent}
         if entry.get("etag"):
@@ -82,21 +87,29 @@ class Watcher:
             headers["If-Modified-Since"] = entry["last_modified"]
 
         waited = self.wait_for_host(url)
-        status, resp_headers, body = self.fetcher(url, headers)
+        try:
+            status, resp_headers, body = self.fetcher(url, headers)
+        except Exception as exc:                      # noqa: BLE001 — источник не роняет обход
+            status, resp_headers, body = 0, {}, b""
+            network_error = "%s: %s" % (type(exc).__name__, exc)
+        else:
+            network_error = ""
         entry["checks"] += 1
         entry["checked"] = self.clock()
         entry["waited"] = round(waited, 3)
 
         if status == 304:
             entry["status"] = 304
+            entry["error"] = ""
             self.save()
             return {"url": url, "changed": False, "status": 304, "reason": "not modified"}
 
         if status != 200:
+            error = "источник недоступен (%s)" % network_error if status == 0 else "HTTP %s" % status
             entry["status"] = status
-            entry["error"] = "HTTP %s" % status
+            entry["error"] = error
             self.save()
-            return {"url": url, "changed": False, "status": status, "error": "HTTP %s" % status}
+            return {"url": url, "changed": False, "status": status, "error": error}
 
         digest = hashlib.sha256(body).hexdigest()
         first_time = entry.get("hash") is None
@@ -136,9 +149,13 @@ class Watcher:
         """
         events = []
         self.last_suppressed = []
+        self.last_errors = []
         for item in watchlist:
             url = item["url"]
             result = self.check(url)
+            if result.get("error"):
+                self.last_errors.append({"url": url, "topic": item.get("topic", url),
+                                         "status": result["status"], "error": result["error"]})
             if not result["changed"] or result.get("first_seen"):
                 continue                      # первый раз — это знакомство, а не новость
             if not result.get("validators") and not item.get("allow_volatile"):
