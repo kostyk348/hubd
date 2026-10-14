@@ -1,0 +1,14 @@
+{
+ "sources": [
+  {
+   "url": "https://www.rfc-editor.org/rfc/rfc3170.txt",
+   "topic": "rfc/3170",
+   "note": "пример: RFC-текст как источник; изменится — хаб разошлёт подписчикам"
+  },
+  {
+   "url": "https://datatracker.ietf.org/doc/rfc868/",
+   "topic": "rfc/868",
+   "note": "страница статуса RFC 868 — следим, не понизят ли её из Internet Standard"
+  }
+ ]
+}

@@ -1,0 +1,1 @@
+"""Тесты hubd (stdlib unittest)."""
