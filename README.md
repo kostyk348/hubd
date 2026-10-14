@@ -145,8 +145,16 @@ python3 -m hubd watchlist --museum ../lost-tech-museum --out watchlist.json
 python3 -m hubd scan --watchlist watchlist.json --state data/scan.json \
     --queue data/candidates.jsonl --hub http://127.0.0.1:8765 --every 300
 python3 -m hubd candidates --file data/candidates.jsonl --status new --show-sample
-python3 -m hubd candidates --file data/candidates.jsonl --accept <id кандидата>
+python3 -m hubd candidates --file data/candidates.jsonl --reject <id кандидата> \
+    --reason "изменение вызвано нашей же публикацией"
 ```
+
+`--accept` и `--reject` принимают `--reason`: причина ложится в ту же строку очереди, рядом со
+статусом, и печатается в отчёте `candidates` под строкой кандидата — «rejected» без причины через
+месяц не отличается от «rejected» по ошибке. Без `--reason` всё как раньше: решение принимается,
+строка не обзаводится пустым полем. Повторный вызов на уже решённом кандидате — не ошибка: код 0,
+«уже отклонён — файл не менялся»; если причина в вызове другая, обновляется только она. Неизвестный
+`id` — по-прежнему код 1 и «кандидат … не найден», `--reason` без решения — код 2.
 
 Кандидат — это (тема, адрес, отпечаток). Возврат источника к уже разобранной версии **доставляется
 подписчикам** (содержимое темы правда изменилось), но **дубля в очереди не создаёт**. Так
@@ -157,11 +165,12 @@ python3 -m hubd candidates --file data/candidates.jsonl --accept <id канди�
 
 | проверка | вывод |
 |---|---|
-| `python3 -m unittest discover -s tests -t .` | `Ran 80 tests … OK` |
+| `python3 -m unittest discover -s tests -t .` | `Ran 93 tests … OK` |
 | `python3 -m hubd demo` | `итог: проверок 11, провалено 0 — работает` (включая очередь повторов и `hub.mode=denied`) |
 | `python3 -m hubd check --watchlist watchlist.json` (обход 1) | 47 источников, все `200` |
 | тот же обход 2 | 46 из 47 → `304` (условный GET работает; arXiv без валидаторов — `allow_volatile`) |
 | рутина `scan → хаб → очередь` на живой HTTP-паре | 9 проверок: знакомство ≠ новость, изменение → кандидат + доставка, 304 → тишина, возврат к разобранной версии → доставка без дубля |
+| `python3 -m hubd candidates --file <копия живой очереди> --reject <id> --reason "…"` | код 0, затем та же строка в отчёте: `rejected` + `причина: …`; повтор с той же причиной — «уже отклонён — файл не менялся», md5 файла тот же |
 
 Цифры обхода — это один конкретный прогон по живой сети, а не гарантия. Независимая проверка того же
 коммита дала на первом обходе 45 из 47: страница спецификации UDDI (2.1 МБ) оборвалась на середине

@@ -8,6 +8,7 @@
     python -m hubd publish  --hub http://127.0.0.1:8765 --topic rfc/rfc3170/status --text "понижен"
     python -m hubd retry    --hub http://127.0.0.1:8765
     python -m hubd candidates --file data/candidates.jsonl --status new
+    python -m hubd candidates --file data/candidates.jsonl --reject <id> --reason "наша же публикация"
     python -m hubd watchlist  --museum ../lost-tech-museum --out watchlist.json
     python -m hubd demo                        # хаб + подписчики + очередь повторов, всё на loopback
 """
@@ -220,17 +221,45 @@ def cmd_retry(args) -> int:
 
 
 # --- очередь кандидатов музея -----------------------------------------------------
+DECISION_WORDS = {"accepted": "принят", "rejected": "отклонён"}
+
+
+def _print_decision(path: str, key: str, status: str, result: dict | None) -> int:
+    """Печатает исход решения триажа. Код 0 — решение в силе, 1 — кандидата нет."""
+    word = DECISION_WORDS[status]
+    if result is None:
+        print("кандидат %s не найден в очереди %s" % (key, path))
+        return 1
+    reason = result["reason"]
+    if not result["changed"]:
+        print("кандидат %s уже %s — файл не менялся%s" % (
+            key, word, ", причина: «%s»" % reason if reason else ""))
+        return 0
+    if result["repeat"]:
+        print("кандидат %s уже %s, причина обновлена: «%s»" % (key, word, reason))
+        return 0
+    if reason and not result.get("carried"):
+        print("%s кандидат %s (был %s), причина: «%s»" % (
+            word, key, result["previous"], reason))
+    elif reason:
+        print("%s кандидат %s (был %s), причина не задана — прежняя запись строки сохранена: "
+              "«%s»" % (word, key, result["previous"], reason))
+    else:
+        print("%s кандидат %s (был %s), без причины" % (word, key, result["previous"]))
+    return 0
+
+
 def cmd_candidates(args) -> int:
     queue = Candidates(args.file)
+    if args.reason and not (args.accept or args.reject):
+        print("ошибка: --reason без решения — причина объясняет --accept или --reject")
+        return 2
     code = 0
-    if args.accept:
-        changed = queue.set_status(args.accept, "accepted")
-        print("принят кандидат %s" % args.accept if changed else "кандидат %s не найден" % args.accept)
-        code = 0 if changed else 1
-    if args.reject:
-        changed = queue.set_status(args.reject, "rejected")
-        print("отклонён кандидат %s" % args.reject if changed else "кандидат %s не найден" % args.reject)
-        code = 0 if changed else 1
+    for key, status in ((args.accept, "accepted"), (args.reject, "rejected")):
+        if not key:
+            continue
+        code = max(code, _print_decision(args.file, key, status,
+                                         queue.decide(key, status, args.reason)))
     counts = queue.counts()
     print("очередь %s: всего %d — новых %d, принято %d, отклонено %d" % (
         args.file, len(queue.all()), counts.get("new", 0), counts.get("accepted", 0),
@@ -238,6 +267,8 @@ def cmd_candidates(args) -> int:
     rows = queue.by_status(args.status) if args.status else queue.all()
     for row in rows[-args.limit:]:
         print("  %s  %-9s %-30s %s" % (row["key"], row.get("status"), row["topic"], row["url"]))
+        if row.get("note"):
+            print("      причина: %s" % row["note"].replace("\n", " ")[:200])
         if row.get("sample") and args.show_sample:
             print("      %s" % row["sample"].replace("\n", " ")[:160])
     return code
@@ -438,6 +469,8 @@ def main(argv=None) -> int:
     p.add_argument("--show-sample", action="store_true")
     p.add_argument("--accept", default="", help="id кандидата, который триаж принял")
     p.add_argument("--reject", default="", help="id кандидата, который триаж отклонил")
+    p.add_argument("--reason", default="",
+                   help="причина решения: ложится в строку очереди рядом со статусом")
     p.set_defaults(func=cmd_candidates)
 
     p = sub.add_parser("watchlist", help="собрать список наблюдения из архива музея")

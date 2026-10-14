@@ -6,6 +6,10 @@
 
 Дедупликация по содержимому: кандидат — это (тема, адрес, отпечаток). Источник, который
 вернулся к прежней версии, и повторный обход с теми же изменениями новых строк не создают.
+
+Статус ставит триаж, и вместе со статусом в ту же строку ложится причина решения
+(поле `note`): «отклонён: наша же публикация» — это то, что нужно помнить через месяц,
+а не только «rejected».
 """
 from __future__ import annotations
 
@@ -58,7 +62,14 @@ class Candidates:
         return rows
 
     def has(self, key: str) -> bool:
-        return any(row["key"] == key for row in self.rows)
+        return self.find(key) is not None
+
+    def find(self, key: str) -> dict | None:
+        """Строка очереди по ключу кандидата; None — такого кандидата нет."""
+        for row in self.rows:
+            if row["key"] == key:
+                return row
+        return None
 
     def add(self, topic: str, url: str, digest: str, body: bytes = b"",
             status: str = "new", note: str = "") -> dict | None:
@@ -94,17 +105,44 @@ class Candidates:
 
     def set_status(self, key: str, status: str) -> bool:
         """Статус ставит триаж; файл переписываем атомарно, чтобы не потерять строки."""
+        return bool((self.decide(key, status) or {}).get("changed"))
+
+    def decide(self, key: str, status: str, reason: str = "") -> dict | None:
+        """Решение триажа: статус и причина одной строкой очереди.
+
+        None — кандидата с таким ключом в очереди нет. Иначе словарь:
+        key, status, previous (статус до решения), reason (что лежит в строке),
+        changed (менялся ли файл), repeat (решение по этому кандидату уже было).
+
+        Причина живёт в поле `note` — рядом со статусом, который она объясняет
+        (именно так она и читается в отчёте `hubd candidates`). Пустая причина —
+        не ошибка: решение принимается без неё, и строка при этом не обзаводится
+        пустым полем. Повторный вызов с той же причиной файл не трогает.
+        """
         if status not in STATUSES:
             raise ValueError("неизвестный статус: %r (можно: %s)" % (status, ", ".join(STATUSES)))
-        changed = False
-        for row in self.rows:
-            if row["key"] == key and row.get("status") != status:
-                row["status"] = status
-                row["decided"] = self.clock()
-                changed = True
-        if changed:
+        reason = (reason or "").strip()
+        row = self.find(key)
+        if row is None:
+            return None
+        previous = row.get("status", "new")
+        stored = row.get("note", "")
+        if previous == status:
+            if not reason or reason == stored:
+                return {"key": key, "status": status, "previous": previous, "reason": stored,
+                        "changed": False, "repeat": True}
+            row["note"] = reason                 # решение то же, уточнилась только причина
+            row["decided"] = self.clock()
             self._rewrite()
-        return changed
+            return {"key": key, "status": status, "previous": previous, "reason": reason,
+                    "changed": True, "repeat": True}
+        row["status"] = status
+        row["decided"] = self.clock()
+        if reason:
+            row["note"] = reason
+        self._rewrite()
+        return {"key": key, "status": status, "previous": previous, "reason": row.get("note", ""),
+                "changed": True, "repeat": False, "carried": bool(stored and not reason)}
 
     def _rewrite(self) -> None:
         directory = os.path.dirname(os.path.abspath(self.path))
