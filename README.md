@@ -1,5 +1,9 @@
 # hubd — хаб подписок и сканер источников
 
+[![CI](https://github.com/kostyk348/hubd/actions/workflows/tests.yml/badge.svg)](https://github.com/kostyk348/hubd/actions/workflows/tests.yml)
+[![Release](https://img.shields.io/github/v/release/kostyk348/hubd?sort=semver&color=blue)](https://github.com/kostyk348/hubd/releases)
+[![Last commit](https://img.shields.io/github/last-commit/kostyk348/hubd?branch=master)](https://github.com/kostyk348/hubd/commits/master)
+
 Минимальный pubsub-хаб поверх HTTP (**тема вместо списка адресатов**, подписка-аренда,
 честный отказ вместо тихой потери сообщения) плюс сканер источников, который превращает
 изменения архивных документов в события для подписчиков.
@@ -36,15 +40,19 @@ challenge, 404 как отказ подписчика («не хочу»), `hub.
 
 ```bash
 # 1. тесты (ноль зависимостей, только stdlib)
+
 python3 -m unittest discover -s tests -t .
 
 # 2. демонстрация целиком: хаб, два подписчика, отказ по политике, очередь повторов
+
 python3 -m hubd demo
 
 # 3. хаб: терминал оставляем занятым
+
 python3 -m hubd serve --store data/hub.json --port 8765
 
 # 4. сканер: следит за источниками из списка наблюдения и публикует изменения в хаб
+
 python3 -m hubd scan --watchlist watchlist.json --state data/scan.json \
     --queue data/candidates.jsonl --hub http://127.0.0.1:8765
 ```
@@ -119,6 +127,7 @@ python3 -m hubd scan --watchlist watchlist.json --state data/scan.json \
 python3 -m hubd watchlist --museum ../lost-tech-museum --out watchlist.json
 # источников: 47 (уникальных адресов: 47) → watchlist.json
 # по темам: arxiv=1, ietf=1, museum=2, rfc=38, rfc-graveyard=5
+
 ```
 
 Что попадает в список:
