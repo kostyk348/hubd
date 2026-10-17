@@ -2,7 +2,9 @@
 
     python -m hubd serve    --store data/hub.json --port 8765
     python -m hubd scan     --watchlist watchlist.json --state data/scan.json \
-                            --queue data/candidates.jsonl --hub http://127.0.0.1:8765
+                            --queue data/candidates.jsonl
+    python -m hubd scan     --watchlist watchlist.json --queue data/candidates.jsonl \
+                            --publish --hub http://127.0.0.1:8765     # доставка — явный флаг
     python -m hubd check    --watchlist watchlist.json --state data/scan.json
     python -m hubd subs     --hub http://127.0.0.1:8765
     python -m hubd publish  --hub http://127.0.0.1:8765 --topic rfc/rfc3170/status --text "понижен"
@@ -15,6 +17,7 @@
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import sys
@@ -32,42 +35,96 @@ from .scan import Watcher, load_watchlist
 from .watchlist import from_museum, write as write_watchlist
 
 
+def _network_cause(exc: BaseException) -> str:
+    """Причина сетевого сбоя по-человечески: хаб может быть не запущен — это штатное состояние."""
+    cause = getattr(exc, "reason", exc)          # URLError несёт настоящую причину в .reason
+    if not isinstance(cause, BaseException):
+        return str(cause)
+    if isinstance(cause, http.client.RemoteDisconnected):
+        return "порт отвечает, но это не HTTP-хаб (соединение закрыто без ответа)"
+    if isinstance(cause, http.client.BadStatusLine):
+        return "порт отвечает, но это не HTTP-хаб (ответ не по HTTP)"
+    if isinstance(cause, http.client.IncompleteRead):
+        return "ответ оборвался на середине"
+    if isinstance(cause, ConnectionRefusedError):
+        return "соединение отклонено"
+    if isinstance(cause, TimeoutError):
+        return "нет ответа за отведённое время"
+    if isinstance(cause, ConnectionResetError):
+        return "соединение сброшено"
+    return "%s: %s" % (type(cause).__name__, cause)
+
+
+class HubUnavailable(Exception):
+    """Хаб не ответил по сети. Причина — строкой, чтобы команда напечатала её, а не traceback."""
+
+
+def _http_call(req: urllib.request.Request, timeout: float) -> tuple[int, bytes]:
+    """Один HTTP-вызов: (код, тело). Сетевой сбой — HubUnavailable, а не падение процесса."""
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, resp.read()
+    except urllib.error.HTTPError as exc:        # хаб ответил кодом ошибки — это данные, не сбой
+        try:
+            body = exc.read()
+        except (http.client.HTTPException, OSError) as read_exc:
+            raise HubUnavailable("хаб недоступен: %s" % _network_cause(read_exc)) from read_exc
+        finally:
+            exc.close()
+        return exc.code, body
+    except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
+        raise HubUnavailable("хаб недоступен: %s" % _network_cause(exc)) from exc
+
+
+def _json_payload(code: int, body: bytes) -> dict:
+    try:
+        data = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as exc:
+        return {"error": "хаб ответил не JSON (код %d, %s): %r" % (
+            code, type(exc).__name__, body[:120])}
+    if isinstance(data, dict):
+        return data
+    return {"body": data}
+
+
+def _call_json(req: urllib.request.Request, timeout: float) -> tuple[int, dict]:
+    try:
+        code, body = _http_call(req, timeout)
+    except HubUnavailable as exc:
+        return 0, {"error": str(exc)}
+    return code, _json_payload(code, body)
+
+
 def _post_form(url: str, form: dict) -> tuple[int, dict]:
     data = urllib.parse.urlencode(form).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST",
                                  headers={"Content-Type": "application/x-www-form-urlencoded"})
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            return resp.status, json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        raw = exc.read().decode("utf-8") or "{}"
-        exc.close()
-        return exc.code, json.loads(raw)
+    return _call_json(req, 15)
 
 
 def _post_publish(hub_url: str, topic: str, body: bytes) -> tuple[int, dict]:
     url = "%s/publish?topic=%s" % (hub_url.rstrip("/"), urllib.parse.quote(topic))
     req = urllib.request.Request(url, data=body, method="POST",
                                  headers={"Content-Type": "application/octet-stream"})
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            return resp.status, json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        raw = exc.read().decode("utf-8") or "{}"
-        exc.close()
-        return exc.code, json.loads(raw)
+    return _call_json(req, 15)
 
 
 def _get_json(url: str) -> dict:
-    with urllib.request.urlopen(url, timeout=15) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        code, body = _http_call(urllib.request.Request(url, method="GET"), 15)
+    except HubUnavailable as exc:
+        return {"error": str(exc)}
+    return _json_payload(code, body)
 
 
 def _post_json(url: str) -> dict:
     req = urllib.request.Request(url, data=b"", method="POST",
                                  headers={"Content-Type": "application/octet-stream"})
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        code, body = _http_call(req, 60)
+    except HubUnavailable as exc:
+        return {"error": str(exc)}
+    return _json_payload(code, body)
 
 
 def _report_line(report: dict) -> str:
@@ -129,14 +186,21 @@ def cmd_scan(args) -> int:
     watcher = Watcher(args.state, min_interval=args.interval)
     watchlist = load_watchlist(args.watchlist)
     queue = Candidates(args.queue) if args.queue else None
+    publish = bool(args.publish and args.hub.strip())
+    if args.publish and not publish:
+        print("публикация выключена: --hub пуст")
     if queue is not None:
         counts = queue.counts()
         print("очередь кандидатов: %s (новых %d, принято %d, отклонено %d)" % (
             args.queue, counts.get("new", 0), counts.get("accepted", 0), counts.get("rejected", 0)))
+    print("публикация в хаб: %s" % (
+        "включена, %s" % args.hub if publish else
+        "выключена (собираем кандидатов; --publish, когда хаб поднят)"))
     while True:
         events = watcher.scan(watchlist)
         if events:
             fresh = dupes = 0
+            accepted = unreachable = 0
             for event in events:
                 if queue is not None:
                     if queue.add(topic=event["topic"], url=event["url"],
@@ -144,12 +208,23 @@ def cmd_scan(args) -> int:
                         dupes += 1
                     else:
                         fresh += 1
+                if not publish:
+                    print("изменился %s → кандидат в очереди, публикация выключена" % event["url"])
+                    continue
                 code, report = _post_publish(args.hub, event["topic"], event["payload"])
+                if code == 0:
+                    unreachable += 1
+                    print("изменился %s → публикация не удалась: %s" % (
+                        event["url"], report.get("error", "хаб недоступен")))
+                    continue
+                accepted += 1
                 print("изменился %s → публикация %s: %s" % (
                     event["url"], code, json.dumps(report, ensure_ascii=False)[:200]))
             if queue is not None:
                 print("кандидатов новых: %d, уже были в очереди: %d (всего %d)" % (
                     fresh, dupes, len(queue.all())))
+            if publish:
+                print("публикаций: хаб принял %d, недоступен %d" % (accepted, unreachable))
         else:
             print("изменений нет (%d источников)" % len(watchlist))
         for error in watcher.last_errors:
@@ -180,6 +255,9 @@ def cmd_check(args) -> int:
 # --- подписки ---------------------------------------------------------------------
 def cmd_subs(args) -> int:
     data = _get_json(args.hub.rstrip("/") + "/subscriptions")
+    if data.get("error"):
+        print("%s — повторите после запуска хаба" % data["error"])
+        return 0
     subs = data.get("subscriptions", [])
     if not subs:
         print("подписок нет")
@@ -196,6 +274,10 @@ def cmd_subs(args) -> int:
 def cmd_publish(args) -> int:
     body = args.text.encode("utf-8") if args.text else sys.stdin.buffer.read()
     code, report = _post_publish(args.hub, args.topic, body)
+    if code == 0:
+        print("%s — ничего не опубликовано, повторите после запуска хаба"
+              % report.get("error", "хаб недоступен"))
+        return 1
     print("HTTP %s %s" % (code, json.dumps(report, ensure_ascii=False, indent=1)))
     if code == 202:
         print("принято, но не подтверждено: хаб повторит доставку по очереди "
@@ -209,6 +291,9 @@ def cmd_publish(args) -> int:
 
 def cmd_retry(args) -> int:
     report = _post_json(args.hub.rstrip("/") + "/retry")
+    if report.get("error"):
+        print("%s — повторите после запуска хаба" % report["error"])
+        return 0
     for row in report["still_pending"]:
         print("ждёт повтора: %s %s, попыток %d, через %ss, последняя ошибка: %s" % (
             row["id"], row["topic"], row["attempts"], row["next_in"], row.get("reason", "")))
@@ -430,11 +515,15 @@ def main(argv=None) -> int:
                    help="как часто проходить очередь неподтверждённых доставок (0 — выключить)")
     p.set_defaults(func=cmd_serve)
 
-    p = sub.add_parser("scan", help="следить за источниками и публиковать изменения")
+    p = sub.add_parser("scan", help="следить за источниками и складывать изменения в очередь кандидатов")
     p.add_argument("--watchlist", required=True)
     p.add_argument("--state", default="data/scan.json")
     p.add_argument("--queue", default="", help="файл очереди кандидатов (JSONL), например data/candidates.jsonl")
-    p.add_argument("--hub", default="http://127.0.0.1:8765")
+    p.add_argument("--hub", default="http://127.0.0.1:8765",
+                   help="адрес хаба; используется только вместе с --publish")
+    p.add_argument("--publish", action="store_true",
+                   help="публиковать изменения в хаб (по умолчанию выключено: обход только собирает "
+                        "кандидатов и завершается успешно, даже если хаб не запущен)")
     p.add_argument("--interval", type=float, default=1.0, help="пауза между запросами к одному хосту")
     p.add_argument("--every", type=float, default=300.0, help="пауза между обходами")
     p.add_argument("--once", action="store_true")
