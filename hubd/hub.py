@@ -24,10 +24,12 @@ HTTP-API:
 """
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import hmac
 import json
 import secrets
+import ssl
 import threading
 import time
 import urllib.error
@@ -36,6 +38,7 @@ import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from .auth import token_from_headers
 from .store import DEFAULT_MAX_ATTEMPTS, Store
 
 SIGNATURE_HEADER = "X-Hub-Signature"
@@ -47,10 +50,42 @@ def sign(secret: str, body: bytes) -> str:
     return "sha256=" + hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
 
 
+def topic_policy_from_config(config: dict):
+    """Политика тем из конфига: {"deny": ["private/*"], "allow": ["museum/*"]}.
+
+    Шаблоны fnmatch. Порядок честный: deny проверяется первым (запрещённое
+    запрещено, даже если совпало с allow), затем allow — тема вне списка
+    разрешённых получает отказ с причиной. Пустые списки ничего не меняют.
+    Возвращает callable(topic) -> (bool, причина) — тот же контракт, что у
+    --topic-prefix, только без правки кода.
+    """
+    deny = [str(pattern) for pattern in config.get("deny") or []]
+    allow = [str(pattern) for pattern in config.get("allow") or []]
+
+    def decide(topic: str) -> tuple[bool, str]:
+        for pattern in deny:
+            if fnmatch.fnmatchcase(topic, pattern):
+                return False, "тема %r запрещена политикой (deny %r)" % (topic, pattern)
+        if allow and not any(fnmatch.fnmatchcase(topic, pattern) for pattern in allow):
+            return False, "хаб обслуживает только темы: %s" % ", ".join(allow)
+        return True, ""
+
+    return decide
+
+
+def load_policy_file(path: str):
+    """Прочитать JSON-файл политики и вернуть callable(topic)."""
+    with open(path, encoding="utf-8") as fh:
+        config = json.load(fh)
+    if not isinstance(config, dict):
+        raise ValueError('политика должна быть JSON-объектом: {"allow": […], "deny": […]}')
+    return topic_policy_from_config(config)
+
+
 class Hub:
     def __init__(self, store_path: str, clock=time.time, max_attempts: int = DEFAULT_MAX_ATTEMPTS,
                  timeout: float = 5.0, journal_path: str | None = None, topic_policy=None,
-                 pending_max_bytes: int | None = None):
+                 pending_max_bytes: int | None = None, publish_auth=None):
         self.store = (Store(store_path, clock=clock) if pending_max_bytes is None
                       else Store(store_path, clock=clock, pending_max_bytes=pending_max_bytes))
         self.clock = clock
@@ -58,6 +93,7 @@ class Hub:
         self.timeout = timeout
         self.journal_path = journal_path
         self.topic_policy = topic_policy      # callable(topic) -> bool | (bool, причина)
+        self.publish_auth = publish_auth      # auth.TokenStore или None (хаб открыт)
         self.journal: list[dict] = []
         # Хаб обслуживается несколькими потоками (HTTP-сервер + проходка по очереди),
         # а хранилище — один JSON-файл: изменения сериализуем, иначе потеряется запись.
@@ -346,6 +382,13 @@ class _Handler(BaseHTTPRequestHandler):
             if not topic:
                 self._send(400, {"error": "нужен ?topic="})
                 return
+            if self.hub.publish_auth is not None:
+                token = token_from_headers(self.headers)
+                allowed, reason = self.hub.publish_auth.check(token, topic)
+                if not allowed:
+                    self.hub._log("publish", topic, "-", False, "отказано: %s" % reason)
+                    self._send(401, {"error": reason})
+                    return
             code, payload = self.hub.publish(topic, self._body(),
                                              self.headers.get("Content-Type", "application/octet-stream"))
             self._send(code, payload)
@@ -355,6 +398,16 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(404, {"error": "нет такого пути"})
 
 
-def build_server(hub: Hub, host: str = "127.0.0.1", port: int = 8765) -> ThreadingHTTPServer:
+def build_server(hub: Hub, host: str = "127.0.0.1", port: int = 8765,
+                 tls_cert: str = "", tls_key: str = "") -> ThreadingHTTPServer:
+    """Сервер хаба. С --tls-cert/--tls-key сокет оборачивается в TLS: тот же
+    протокол, но доставка и публикация идут по https."""
     handler = type("BoundHandler", (_Handler,), {"hub": hub})
-    return ThreadingHTTPServer((host, port), handler)
+    server = ThreadingHTTPServer((host, port), handler)
+    if tls_cert or tls_key:
+        if not (tls_cert and tls_key):
+            raise ValueError("нужны оба файла: --tls-cert и --tls-key")
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(tls_cert, tls_key)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+    return server

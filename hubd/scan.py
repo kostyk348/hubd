@@ -15,6 +15,8 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlparse
 
+from .adapters import AdapterError, run_adapter
+
 
 def default_fetcher(url: str, headers: dict[str, str]) -> tuple[int, dict[str, str], bytes]:
     """Возвращает (код, заголовки, тело). 304 — если источник не менялся."""
@@ -30,7 +32,7 @@ class Watcher:
     """Следит за источниками и говорит, что изменилось."""
 
     def __init__(self, state_path: str, fetcher=default_fetcher, clock=time.time,
-                 min_interval: float = 1.0, user_agent: str = "hubd/0.1 (+museum)"):
+                 min_interval: float = 1.0, user_agent: str = "hubd/1.0 (+universal)"):
         self.state_path = state_path
         self.fetcher = fetcher
         self.clock = clock
@@ -139,38 +141,59 @@ class Watcher:
             "body": body,
         }
 
-    def scan(self, watchlist: list[dict]) -> list[dict]:
+    def scan(self, watchlist: list[dict], plugins: dict | None = None) -> list[dict]:
         """Обходит список наблюдения. Возвращает только то, что стоит публиковать.
 
         Источник без валидаторов (ни ETag, ни Last-Modified) считается «болтливым»: его страница
         меняется на каждый запрос (счётчики, даты), и событие «изменилось» ничего не значит.
         С такого источника события подавляются, пока в списке наблюдения не сказано
         `"allow_volatile": true` — это осознанное решение, а не молчаливая потеря события.
+
+        Что именно изменение значит, решает адаптер источника (adapters.py): plain
+        публикует тело целиком, лента — новые записи, json — значение по пути.
+        plugins — загруженные плагины (plugins.py). Ошибка адаптера или плагина на
+        конкретном источнике — видимая ошибка этого источника, а не падение обхода.
         """
         events = []
         self.last_suppressed = []
         self.last_errors = []
+        self._adapter_dirty = False
         for item in watchlist:
             url = item["url"]
             result = self.check(url)
             if result.get("error"):
                 self.last_errors.append({"url": url, "topic": item.get("topic", url),
                                          "status": result["status"], "error": result["error"]})
-            if not result["changed"] or result.get("first_seen"):
+            entry = self.state.get(url) or {}
+            if result.get("first_seen"):
+                # Знакомство: состояние адаптера наполняем (seen/digest), событий не издаём —
+                # иначе первая же правка ленты разродилась бы всем её текущим содержимым.
+                try:
+                    run_adapter(item, result, entry, plugins)
+                    self._adapter_dirty = True
+                except AdapterError as exc:
+                    self.last_errors.append({"url": url, "topic": item.get("topic", url),
+                                             "status": result.get("status"),
+                                             "error": "адаптер: %s" % exc})
                 continue                      # первый раз — это знакомство, а не новость
+            if not result["changed"]:
+                continue
             if not result.get("validators") and not item.get("allow_volatile"):
                 self.last_suppressed.append({
                     "url": url, "topic": item.get("topic", url),
                     "reason": "источник без ETag/Last-Modified: события подавлены (нужен allow_volatile)",
                 })
                 continue
-            events.append({
-                "topic": item.get("topic", url),
-                "url": url,
-                "payload": result["body"],
-                "hash": result["hash"],
-                "status": result["status"],
-            })
+            try:
+                events.extend(run_adapter(item, result, entry, plugins))
+                self._adapter_dirty = True
+            except AdapterError as exc:
+                self.last_errors.append({"url": url, "topic": item.get("topic", url),
+                                         "status": result.get("status"),
+                                         "error": "адаптер: %s" % exc})
+                continue
+        if events or self._adapter_dirty:
+            self.save()                       # адаптеры обновили своё состояние (seen/digest)
         return events
 
 

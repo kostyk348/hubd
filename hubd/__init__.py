@@ -1,6 +1,8 @@
-"""hubd — хаб подписок: одна точка публикации, много подписчиков, аренда и честный отказ.
+"""hubd — хаб подписок, сканер источников и WebSub-клиент без зависимостей.
 
-Идея взята из музея:
+Одна точка публикации, много подписчиков, аренда и честный отказ. Идеи взяты
+из находок «Музея потерянных идей» (RFC-кладбище):
+
   * `ipmulticast` (запись архива) — издатель не знает подписчиков, есть «адрес группы»;
   * `pubsubhubbub` — децентрализованный pubsub поверх HTTP (стал WebSub);
   * `rsvp` / `atmip` — контракт доставки: заявка → принятие → обязательство, с честным отказом
@@ -10,9 +12,18 @@
   * `hub` — HTTP-хаб: подписка-аренда, доставка с подписью, отказ (в том числе hub.mode=denied);
   * `store` — подписки и очередь неподтверждённых доставок (JSON на диске, backoff);
   * `scan` — условный GET по списку наблюдения, дедупликация, события для хаба;
+  * `adapters` — что изменение значит: plain / JSON-API / RSS-Atom ленты;
+  * `plugins` — слот своих адаптеров и фильтров событий (каталог *.py);
+  * `discovery` — обнаружение хаба страницей/лентой (WebSub §4: Link, atom:link);
+  * `listen` — подписчик: challenge, hub.mode=denied, доставки с подписью, JSONL-журнал;
+  * `auth` — токены издателя (sha256 в файле, scope по темам);
   * `watchlist` — сборка списка наблюдения из архива музея (только чтение);
-  * `candidates` — очередь кандидатов для триажа хранителя архива;
-  * `__main__` — CLI: serve, scan, check, subs, publish, retry, candidates, watchlist, demo.
+  * `candidates` — очередь кандидатов для триажа хранителя;
+  * `__main__` — CLI: serve, scan, check, subs, publish, retry, candidates, watchlist,
+    discover, subscribe, listen, token, demo.
+
+Только стандартная библиотека Python 3.11+: `pip install` здесь не нужен.
 """
-__all__ = ["store", "hub", "scan", "watchlist", "candidates"]
-__version__ = "0.2.0"
+__all__ = ["store", "hub", "scan", "adapters", "plugins", "discovery",
+           "listen", "auth", "watchlist", "candidates"]
+__version__ = "1.0.0"
