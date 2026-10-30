@@ -1,4 +1,5 @@
-"""CLI: hubd serve | scan | check | subs | publish | retry | candidates | watchlist | demo.
+"""CLI: hubd serve | scan | check | subs | publish | retry | candidates | watchlist
+        | discover | subscribe | listen | token | demo.
 
     python -m hubd serve    --store data/hub.json --port 8765
     python -m hubd scan     --watchlist watchlist.json --state data/scan.json \
@@ -12,6 +13,10 @@
     python -m hubd candidates --file data/candidates.jsonl --status new
     python -m hubd candidates --file data/candidates.jsonl --reject <id> --reason "наша же публикация"
     python -m hubd watchlist  --museum ../lost-tech-museum --out watchlist.json
+    python -m hubd listen   --port 9001 --secret "rfc/*=s3cret"    # подписчик: challenge + доставки
+    python -m hubd discover --url https://example.org/feed --subscribe \
+                            --callback http://127.0.0.1:9001/cb    # WebSub-обнаружение хаба
+    python -m hubd token                                     # токен издателя + sha256 для --publish-tokens
     python -m hubd demo                        # хаб + подписчики + очередь повторов, всё на loopback
 """
 from __future__ import annotations
@@ -29,8 +34,12 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from . import discovery
+from .auth import TokenStore, generate as generate_token
 from .candidates import Candidates
-from .hub import Hub, build_server
+from .hub import Hub, build_server, load_policy_file
+from .listen import Inbox, Subscriber, parse_secrets
+from .plugins import load_plugins
 from .scan import Watcher, load_watchlist
 from .watchlist import from_museum, write as write_watchlist
 
@@ -150,7 +159,13 @@ def _retry_loop(hub: Hub, interval: float, stop: threading.Event) -> None:
 
 def cmd_serve(args) -> int:
     policy = None
-    if args.topic_prefix:
+    if args.policy:
+        try:
+            policy = load_policy_file(args.policy)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            print("ошибка политики тем: %s" % exc)
+            return 2
+    elif args.topic_prefix:
         prefix = args.topic_prefix
 
         def decide(topic: str) -> tuple[bool, str]:
@@ -159,14 +174,30 @@ def cmd_serve(args) -> int:
             return False, "хаб обслуживает только темы с префиксом %r" % prefix
 
         policy = decide
-    hub = Hub(args.store, journal_path=args.journal, topic_policy=policy)
-    server = build_server(hub, args.host, args.port)
+    publish_auth = None
+    if args.publish_tokens:
+        try:
+            publish_auth = TokenStore.load(args.publish_tokens)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            print("ошибка токенов издателя: %s" % exc)
+            return 2
+        print("публикация защищена токенами: %d шт. (хеши в %s)" % (
+            len(publish_auth.entries), args.publish_tokens))
+    hub = Hub(args.store, journal_path=args.journal, topic_policy=policy,
+              publish_auth=publish_auth)
+    try:
+        server = build_server(hub, args.host, args.port,
+                              tls_cert=args.tls_cert, tls_key=args.tls_key)
+    except (OSError, ValueError) as exc:
+        print("ошибка TLS: %s" % exc)
+        return 2
     host, port = server.server_address[:2]
     stop = threading.Event()
     if args.retry_interval > 0:
         threading.Thread(target=_retry_loop, args=(hub, args.retry_interval, stop),
                          daemon=True).start()
-    print("хаб слушает http://%s:%d  (store: %s)" % (host, port, args.store))
+    print("хаб слушает http%s://%s:%d  (store: %s)" % (
+        "s" if args.tls_cert else "", host, port, args.store))
     print("подписок: %d, не подтверждено доставок: %d, проходка по очереди: %s" % (
         len(hub.store.as_list()), hub.store.unconfirmed(),
         "каждые %gs" % args.retry_interval if args.retry_interval > 0 else "выключена"))
@@ -185,6 +216,11 @@ def cmd_serve(args) -> int:
 def cmd_scan(args) -> int:
     watcher = Watcher(args.state, min_interval=args.interval)
     watchlist = load_watchlist(args.watchlist)
+    plugins, skipped_plugins = load_plugins(args.plugins)
+    for path, reason in skipped_plugins:
+        print("плагин пропущен: %s — %s" % (path, reason))
+    if plugins:
+        print("плагины: %s" % ", ".join(sorted(plugins)))
     queue = Candidates(args.queue) if args.queue else None
     publish = bool(args.publish and args.hub.strip())
     if args.publish and not publish:
@@ -197,7 +233,7 @@ def cmd_scan(args) -> int:
         "включена, %s" % args.hub if publish else
         "выключена (собираем кандидатов; --publish, когда хаб поднят)"))
     while True:
-        events = watcher.scan(watchlist)
+        events = watcher.scan(watchlist, plugins=plugins)
         if events:
             fresh = dupes = 0
             accepted = unreachable = 0
@@ -384,6 +420,96 @@ def cmd_watchlist(args) -> int:
     return 0
 
 
+# --- клиент протокола: discover / subscribe / listen / token ----------------------
+def cmd_discover(args) -> int:
+    try:
+        page = discovery.discover(args.url)
+    except urllib.error.HTTPError as exc:
+        print("HTTP %s: %s" % (exc.code, args.url))
+        return 1
+    except (urllib.error.URLError, OSError) as exc:
+        print("недоступно: %s — %s" % (args.url, exc))
+        return 1
+    print("адрес: %s" % page["url"])
+    print("content-type: %s" % (page["content_type"] or "не указан"))
+    if page["self"]:
+        print("self:  %s" % page["self"])
+    if not page["hubs"]:
+        print("хаб не объявлен: ни Link-заголовка, ни link rel=hub в разметке")
+        return 1
+    for hub_url in page["hubs"]:
+        print("hub:   %s" % hub_url)
+    if not args.subscribe:
+        return 0
+    if not args.callback:
+        print("ошибка: --subscribe требует --callback (адрес подписчика)")
+        return 2
+    hub_url = args.hub or page["hubs"][0]
+    form = {"hub.mode": "subscribe",
+            "hub.topic": args.topic or page["self"] or page["url"],
+            "hub.callback": args.callback, "hub.lease_seconds": args.lease}
+    if args.secret:
+        form["hub.secret"] = args.secret
+    code, payload = _post_form(hub_url.rstrip("/") + "/subscribe", form)
+    print("подписка у %s: HTTP %s %s" % (hub_url, code, json.dumps(payload, ensure_ascii=False)))
+    return 0 if code == 202 else 1
+
+
+def cmd_subscribe(args) -> int:
+    form = {"hub.mode": "subscribe", "hub.topic": args.topic,
+            "hub.callback": args.callback, "hub.lease_seconds": args.lease}
+    if args.secret:
+        form["hub.secret"] = args.secret
+    code, payload = _post_form(args.hub.rstrip("/") + "/subscribe", form)
+    print("подписка: HTTP %s %s" % (code, json.dumps(payload, ensure_ascii=False)))
+    return 0 if code == 202 else 1
+
+
+def cmd_listen(args) -> int:
+    try:
+        secrets_list = parse_secrets(args.secret, args.secrets_file)
+    except (ValueError, OSError, json.JSONDecodeError) as exc:
+        print("ошибка секретов: %s" % exc)
+        return 2
+    if args.out_secret and not args.topic:
+        print("ошибка: --out-secret требует --topic (какую тему слушать)")
+        return 2
+    if args.out_secret:
+        secrets_list.append((args.topic, args.out_secret))
+    inbox = Inbox(args.save)
+    subscriber = Subscriber(inbox, secrets_list, respond=args.respond)
+    server = subscriber.build_server(args.host, args.port)
+    host, port = server.server_address[:2]
+    callback = "http://%s:%d%s" % (host, port, args.path)
+    print("подписчик слушает %s" % callback)
+    print("журнал: %s; секретов тем: %d" % (
+        args.save or "только печать (файл не указан)", len(secrets_list)))
+    if args.subscribe:
+        form = {"hub.mode": "subscribe", "hub.topic": args.topic,
+                "hub.callback": callback, "hub.lease_seconds": args.lease}
+        if args.out_secret:
+            form["hub.secret"] = args.out_secret
+        code, payload = _post_form(args.subscribe.rstrip("/") + "/subscribe", form)
+        print("подписка у %s: HTTP %s %s" % (args.subscribe, code,
+                                             json.dumps(payload, ensure_ascii=False)))
+        if code != 202:
+            return 1
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nостановлено")
+    return 0
+
+
+def cmd_token(args) -> int:
+    token, digest = generate_token()
+    print("токен (показывается один раз): %s" % token)
+    print("sha256: %s" % digest)
+    print("\nстрока для файла токенов (--publish-tokens):")
+    print(json.dumps({"publish_tokens": [{"sha256": digest, "topics": []}]}, indent=1))
+    return 0
+
+
 # --- живая демонстрация -----------------------------------------------------------
 def cmd_demo(args) -> int:
     """Живая демонстрация: хаб + подписчики + очередь повторов. Всё на 127.0.0.1."""
@@ -511,6 +637,13 @@ def main(argv=None) -> int:
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--topic-prefix", default="",
                    help="обслуживать только темы с этим префиксом (остальным хаб отказывает)")
+    p.add_argument("--policy", default="",
+                   help='JSON-файл политики тем: {"allow": ["museum/*"], "deny": ["private/*"]}')
+    p.add_argument("--publish-tokens", default="",
+                   help="файл с sha256-хешами токенов издателя (генерирует hubd token); "
+                        "без файла публикация открыта всем, кто дотянулся до порта")
+    p.add_argument("--tls-cert", default="", help="PEM-сертификат: включить HTTPS")
+    p.add_argument("--tls-key", default="", help="PEM-ключ для --tls-cert")
     p.add_argument("--retry-interval", type=float, default=30.0,
                    help="как часто проходить очередь неподтверждённых доставок (0 — выключить)")
     p.set_defaults(func=cmd_serve)
@@ -526,6 +659,8 @@ def main(argv=None) -> int:
                         "кандидатов и завершается успешно, даже если хаб не запущен)")
     p.add_argument("--interval", type=float, default=1.0, help="пауза между запросами к одному хосту")
     p.add_argument("--every", type=float, default=300.0, help="пауза между обходами")
+    p.add_argument("--plugins", action="append", default=None,
+                   help="каталог с плагинами (*.py: свои адаптеры и фильтры; можно повторять)")
     p.add_argument("--once", action="store_true")
     p.set_defaults(func=cmd_scan)
 
@@ -569,6 +704,47 @@ def main(argv=None) -> int:
     p.add_argument("--all-hosts", action="store_true",
                    help="включить и не архивные хосты (новости, вики)")
     p.set_defaults(func=cmd_watchlist)
+
+    p = sub.add_parser("discover", help="найти хаб страницы или ленты (WebSub §4)")
+    p.add_argument("--url", required=True)
+    p.add_argument("--subscribe", action="store_true",
+                   help="сразу подписать --callback у обнаруженного хаба")
+    p.add_argument("--hub", default="", help="подписаться у этого хаба, а не у обнаруженного")
+    p.add_argument("--topic", default="", help="тема (по умолчанию self или сам адрес)")
+    p.add_argument("--callback", default="", help="адрес подписчика (нужен для --subscribe)")
+    p.add_argument("--lease", type=int, default=3600)
+    p.add_argument("--secret", default="")
+    p.set_defaults(func=cmd_discover)
+
+    p = sub.add_parser("subscribe", help="подписаться у хаба на тему")
+    p.add_argument("--hub", required=True)
+    p.add_argument("--topic", required=True)
+    p.add_argument("--callback", required=True)
+    p.add_argument("--lease", type=int, default=3600)
+    p.add_argument("--secret", default="")
+    p.set_defaults(func=cmd_subscribe)
+
+    p = sub.add_parser("listen", help="подписчик: challenge эхом, доставки в журнал")
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=9001)
+    p.add_argument("--path", default="/cb")
+    p.add_argument("--save", default="data/inbox.jsonl",
+                   help="JSONL-журнал входящих (пусто — только печать)")
+    p.add_argument("--secret", action="append", default=None,
+                   help='секрет темы: "ТЕМА=СЕКРЕТ", шаблон fnmatch (можно повторять)')
+    p.add_argument("--secrets-file", default="",
+                   help='JSON: {"secrets": {"rfc/*": "s3cret"}}')
+    p.add_argument("--respond", type=int, default=204, help="код ответа на доставку")
+    p.add_argument("--subscribe", default="",
+                   help="хаб, у которого сразу подписаться своим адресом")
+    p.add_argument("--topic", default="", help="тема для --subscribe")
+    p.add_argument("--out-secret", default="",
+                   help="секрет, который сообщить хабу при --subscribe")
+    p.add_argument("--lease", type=int, default=3600)
+    p.set_defaults(func=cmd_listen)
+
+    p = sub.add_parser("token", help="токен издателя: сам токен и sha256 для tokens.json")
+    p.set_defaults(func=cmd_token)
 
     p = sub.add_parser("demo", help="живая демонстрация на loopback")
     p.add_argument("--workdir", default="")
