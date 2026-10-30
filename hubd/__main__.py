@@ -111,10 +111,12 @@ def _post_form(url: str, form: dict) -> tuple[int, dict]:
     return _call_json(req, 15)
 
 
-def _post_publish(hub_url: str, topic: str, body: bytes) -> tuple[int, dict]:
+def _post_publish(hub_url: str, topic: str, body: bytes, token: str = "") -> tuple[int, dict]:
     url = "%s/publish?topic=%s" % (hub_url.rstrip("/"), urllib.parse.quote(topic))
-    req = urllib.request.Request(url, data=body, method="POST",
-                                 headers={"Content-Type": "application/octet-stream"})
+    headers = {"Content-Type": "application/octet-stream"}
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    req = urllib.request.Request(url, data=body, method="POST", headers=headers)
     return _call_json(req, 15)
 
 
@@ -309,7 +311,7 @@ def cmd_subs(args) -> int:
 
 def cmd_publish(args) -> int:
     body = args.text.encode("utf-8") if args.text else sys.stdin.buffer.read()
-    code, report = _post_publish(args.hub, args.topic, body)
+    code, report = _post_publish(args.hub, args.topic, body, token=args.token)
     if code == 0:
         print("%s — ничего не опубликовано, повторите после запуска хаба"
               % report.get("error", "хаб недоступен"))
@@ -680,6 +682,8 @@ def main(argv=None) -> int:
     p.add_argument("--hub", default="http://127.0.0.1:8765")
     p.add_argument("--topic", required=True)
     p.add_argument("--text")
+    p.add_argument("--token", default="",
+                   help="токен издателя, если хаб запущен с --publish-tokens")
     p.set_defaults(func=cmd_publish)
 
     p = sub.add_parser("retry", help="одна проходка по очереди неподтверждённых доставок")
