@@ -1,236 +1,214 @@
-# hubd — хаб подписок и сканер источников
+# hubd
 
-[![CI](https://github.com/kostyk348/hubd/actions/workflows/tests.yml/badge.svg)](https://github.com/kostyk348/hubd/actions/workflows/tests.yml)
-[![Release](https://img.shields.io/github/v/release/kostyk348/hubd?sort=semver&color=blue)](https://github.com/kostyk348/hubd/releases)
-[![Last commit](https://img.shields.io/github/last-commit/kostyk348/hubd?branch=master)](https://github.com/kostyk348/hubd/commits/master)
+### Stop polling. Subscribe once.
 
-Минимальный pubsub-хаб поверх HTTP (**тема вместо списка адресатов**, подписка-аренда,
-честный отказ вместо тихой потери сообщения) плюс сканер источников, который превращает
-изменения архивных документов в события для подписчиков.
+**hubd is a pub/sub hub, a source watcher and a WebSub client in one dependency-free package.
+Publishers post to a topic without knowing subscribers, subscriptions are leases, and an
+unconfirmed delivery is a state — retried with backoff or honestly refused, never silently lost.**
 
-Python 3.11+ и **только стандартная библиотека**: `pip install` здесь не нужен и не появится.
+[**English**](README.md) · [Русский](README.ru.md)
+
+---
+
+## What is hubd?
+
+One Python package (3.11+, **standard library only** — `pip install` is not needed and not
+welcome) that covers both sides of the change-detection story — for scripts, bots, agents,
+homelab cron jobs, anything that needs to react to changes:
+
+* 📡 **Hub** — subscribe / unsubscribe / publish over HTTP with WebSub discipline:
+  challenge-verified intent, `hub.mode=denied`, `X-Hub-Signature: sha256=…`
+* ⏳ **Delivery contract** — an unconfirmed delivery is not silence: a persistent retry queue
+  with exponential backoff; when attempts run out the subscription is marked `degraded` and the
+  hub answers `503` **with a reason**
+* 🔍 **Watcher** — conditional GET (`ETag` / `If-Modified-Since`), sha256 dedup, polite
+  1 req/s per host; "noisy" sources without validators are visibly suppressed, not dropped
+* 🔌 **Adapters** — a changed body is not yet an event: `plain` publishes the raw body,
+  `json` publishes the value at `json_path` (dedup **by value**, not by a noisy body),
+  `rss`/`atom` publish per entry
+* 🧩 **Plugins** — drop `.py` files into a directory: your own adapters (`extract`) and event
+  filters (`transform`) without touching the core
+* 🛰 **WebSub client side** — `discover` reads the hub a page advertises (`Link` header,
+  `atom:link`), `listen` runs a callback server (challenge echo, signed deliveries, JSONL
+  inbox), `subscribe` performs the handshake
+* 🔐 **Optional hardening** — publisher tokens (sha256-hashed in the config, topic-scoped),
+  topic policies (`allow`/`deny`), HTTPS with two flags
+* 🧪 **Proven, not promised** — 153 tests, an 11-check live demo on loopback, honest exit
+  codes for cron
+
+## Where it comes from
+
+hubd grew out of the [RFC-graveyard digest](https://kostyk348.github.io/lost-tech-museum/digests/rfc-graveyard/)
+of the Museum of Lost Ideas — not "inspired by", but record by record:
+
+| archive record | what it became |
+| --- | --- |
+| `ipmulticast` | an address of a group instead of a list of recipients: publish to a **topic**, know no subscribers |
+| `pubsubhubbub` | pub/sub over HTTP: `hub.topic` / `hub.callback` / `hub.secret`, intent verified by a challenge |
+| `rsvp`, `atmip` | a delivery contract: a subscription is a lease, unconfirmed delivery is retried and in the limit **honestly refused** |
+| `time868` | a prototypical watch object: "RFC 868 — formally a standard, de facto a museum piece" |
+
+The discipline is compatible in spirit with [WebSub (W3C)](https://www.w3.org/TR/websub/):
+challenge, 404 as a subscriber's refusal, `hub.mode=denied` as a message **from the hub**,
+`X-Hub-Signature: sha256=…` per subscription secret. The museum remains one example watchlist
+(`python -m hubd watchlist --museum …`) — not a requirement.
+
+## Quick start
 
 ```
-python3 -m unittest discover -s tests -t .    # 80 тестов
-python3 -m hubd demo                          # живая демонстрация на loopback: 11 проверок
-```
+# 1. tests — zero dependencies, stdlib only
+python3 -m unittest discover -s tests -t .          # Ran 153 tests ... OK
 
-## Откуда это взялось
+# 2. the whole demonstration: hub, two subscribers, refusal policy, retry queue
+python3 -m hubd demo                                 # итог: проверок 11, провалено 0
 
-Из дайджеста музея потерянных идей
-[«RFC-кладбище»](https://kostyk348.github.io/lost-tech-museum/digests/rfc-graveyard/).
-Идеи взяты не «по мотивам», а по записям архива:
-
-| запись архива (`id`) | что взято |
-|---|---|
-| `ipmulticast` | адрес группы вместо списка получателей: издатель публикует в **тему** и не знает подписчиков |
-| `pubsubhubbub` | pubsub поверх HTTP: `hub.topic` / `hub.callback` / `hub.secret`, проверка намерения challenge'ом |
-| `rsvp`, `atmip` | контракт доставки: подписка — аренда, неподтверждённая доставка не теряется, а честно повторяется и в пределе честно отказывает |
-| `time868` | типовой объект слежения: «RFC 868 — формально стандарт, де-факто музей» → следим за статусом документа |
-
-Где именно идея подтверждена первоисточником — видно в `watchlist.json`: у каждого источника
-в поле `museum` стоят `id` записей архива, из-за которых он в списке. В `data/` и `stacks/`
-музея hubd не пишет — только читает.
-
-Дисциплина протокола совместима по духу с [WebSub (W3C)](https://www.w3.org/TR/websub/):
-challenge, 404 как отказ подписчика («не хочу»), `hub.mode=denied` как сообщение **хаба**
-подписчику, `X-Hub-Signature: sha256=…` по секрету подписки.
-
-## Быстрый старт
-
-```bash
-# 1. тесты (ноль зависимостей, только stdlib)
-
-python3 -m unittest discover -s tests -t .
-
-# 2. демонстрация целиком: хаб, два подписчика, отказ по политике, очередь повторов
-
-python3 -m hubd demo
-
-# 3. хаб: терминал оставляем занятым
-
+# 3. run a hub (add --tls-cert/--tls-key for https, --publish-tokens for auth)
 python3 -m hubd serve --store data/hub.json --port 8765
 
-# 4. сканер: следит за источниками и складывает изменения в очередь кандидатов.
-#    Хаб для сбора не нужен: обход и доставка разведены.
-python3 -m hubd scan --watchlist watchlist.json --state data/scan.json \
-    --queue data/candidates.jsonl
-
-# 4а. доставка изменений подписчикам — только явным флагом и только когда хаб поднят
-python3 -m hubd scan --watchlist watchlist.json --state data/scan.json \
-    --queue data/candidates.jsonl --publish --hub http://127.0.0.1:8765
+# 4. watch sources; collecting and delivering are separate steps
+python3 -m hubd scan --watchlist watchlist.json --queue data/candidates.jsonl --once
+python3 -m hubd scan --watchlist watchlist.json --queue data/candidates.jsonl \
+                    --publish --hub http://127.0.0.1:8765 --every 300
 ```
 
-Что печатает демонстрация (сокращённо, вывод реального запуска):
+A watchlist is just JSON — any list of sources with topics:
 
 ```
-1. политика хаба: подписка на частную тему
-  ← приёмник: хаб отказал (hub.mode=denied): хаб обслуживает только темы museum/*
-подписка на private/rfc: HTTP 403 {"error": "подписка отклонена хабом: ...", "denied": true, ...}
-4. ломающийся подписчик: доставка не подтверждена → очередь
-  ← ломающийся: доставка 21 байт, подпись: sha256=c41095b1…, ответ 500
-публикация → HTTP 202, доставлено 1, в очереди 1
-5. подписчик починился; через 6s пауза истекла — проходка по очереди
-повтор: попыток 1, доставлено 1, ждут повтора 0, сдались 0, брошено 0, не подтверждено всего 0
-
-итог: проверок 11, провалено 0 — работает
+{"sources": [
+  {"url": "https://blog.example/feed.xml",   "topic": "blog",        "adapter": "rss"},
+  {"url": "https://api.example.com/.../latest", "topic": "app/releases",
+   "adapter": "json", "json_path": "tag_name"},
+  {"url": "https://page.example.com/status", "topic": "page/status"}
+]}
 ```
 
-## HTTP-API хаба
+## Screenshots (real output, loopback)
 
-| метод | путь | что делает |
-|---|---|---|
-| `POST` | `/subscribe` | `hub.mode=subscribe`, `hub.topic`, `hub.callback`, `hub.lease_seconds`, `hub.secret`. Отвечает **202** и только после проверки намерения (challenge, который подписчик обязан вернуть эхом) |
-| `POST` | `/unsubscribe` | `hub.mode=unsubscribe`, `hub.topic`, `hub.callback` → 202; вместе с подпиской снимается её очередь |
-| `POST` | `/publish?topic=…` | тело — полезная нагрузка. Публикация **в тему**: издатель не перечисляет подписчиков |
-| `POST` | `/retry` | одна проходка по очереди неподтверждённых доставок (её же крутит `serve --retry-interval`) |
-| `GET` | `/subscriptions` | подписки без секретов: аренда, доставки, провалы, `pending`, общий `unconfirmed` |
-| `GET` | `/journal` | последние 50 записей журнала (кому и что доставлено) |
-| `GET` | `/healthz` | `ok`, число подписок, `unconfirmed` |
+| The 11-check demo | Tokens, policy, subscriber |
+| --- | --- |
+| ![hubd demo](assets/promo/demo_hub.png) | ![hubd universal](assets/promo/demo_universal.png) |
 
-Коды ответа на публикацию не «успех вообще», а честный итог:
+## The HTTP API of the hub
 
-| код | смысл |
-|---|---|
-| `200` | доставлено **всем** активным подписчикам |
-| `202` | принято, но что-то ещё не подтверждено — уйдёт в повтор (`unconfirmed` в теле) |
-| `502` | доставить не смогли и повторить не сможем (тело больше очереди) |
-| `503` | все подписчики нарушили контракт доставки: `refused` с причиной |
+| method | path | what it does |
+| --- | --- | --- |
+| `POST` | `/subscribe` | `hub.mode=subscribe`, `hub.topic`, `hub.callback`, `hub.lease_seconds`, `hub.secret`. Answers **202** only after the intent is verified (challenge the subscriber must echo) |
+| `POST` | `/unsubscribe` | `hub.mode=unsubscribe`, `hub.topic`, `hub.callback` → 202; the subscription's queue goes with it |
+| `POST` | `/publish?topic=…` | body is the payload. Published **to a topic**: the publisher never lists subscribers |
+| `POST` | `/retry` | one pass over the queue of unconfirmed deliveries (`serve --retry-interval` runs it in a loop) |
+| `GET` | `/subscriptions` | subscriptions without secrets: lease, deliveries, failures, `pending`, total `unconfirmed` |
+| `GET` | `/journal` | last 50 journal records (who got what) |
+| `GET` | `/healthz` | `ok`, number of subscriptions, `unconfirmed` |
 
-## Контракт доставки: «не подтверждено» — это состояние, а не тишина
+Publishing answers honestly, not "success in general":
 
-`rsvp`/`atmip` в архиве — про то, что обещание доставки должно быть проверяемым. Поэтому:
+| code | meaning |
+| --- | --- |
+| `200` | delivered to **all** active subscribers |
+| `202` | accepted, but something is unconfirmed — it will be retried (`unconfirmed` in the body) |
+| `502` | could not deliver and cannot retry (body larger than the queue) |
+| `503` | every subscriber broke the delivery contract: `refused` with reasons |
 
-* доставка, которую подписчик не подтвердил, кладётся в очередь с задержкой **5 с**, дальше пауза
-  удваивается до 1 часа (`backoff_seconds`);
-* повторов на сообщение — до 8 (`max_attempts` у `Hub`, пока не вынесен в CLI);
-* очередь лежит на диске (в том же JSON, что подписки) и переживает перезапуск;
-* тело больше 256 КБ в очередь не кладём: вместо тихой потери — `502` и причина;
-* когда попытки исчерпаны, подписка помечается `degraded` с причиной, и хаб дальше **честно
-  отказывает** `503`, а не делает вид, что доставил;
-* аренда кончилась или подписку сняли — очередь этой подписки выбрасывается: стучаться некуда;
-* сколько доставок хаб взял на себя и ещё не подтвердил, видно в `/healthz`, `/subscriptions`,
-  `hubd subs` и в отчёте `hubd retry`.
+## The delivery contract: "unconfirmed" is a state, not silence
 
-## Сканер источников
+* an unconfirmed delivery enters the queue with a **5 s** delay, doubling up to 1 hour
+  (`backoff_seconds`);
+* up to 8 attempts per message (`max_attempts`);
+* the queue lives on disk (same JSON as subscriptions) and survives restarts;
+* a body over 256 KB is **not** queued: instead of a silent loss — `502` with a reason;
+* when attempts run out the subscription is marked `degraded`, and the hub honestly refuses
+  (`503`) instead of pretending it delivered;
+* an expired lease or removed subscription drops its queue: nobody to knock on;
+* how many deliveries the hub has taken on and not yet confirmed is visible in `/healthz`,
+  `/subscriptions`, `hubd subs` and the `hubd retry` report.
 
-* условный GET: `If-None-Match` / `If-Modified-Since` — «не изменилось» стоит одного 304 и нуля байт;
-* дедупликация по sha256 содержимого: первый обход — знакомство, а не новость;
-* вежливость: не чаще одного запроса в секунду к одному хосту;
-* источник без `ETag`/`Last-Modified` «болтлив» (меняется на каждый запрос) — события подавляются,
-  пока в списке наблюдения не сказано `"allow_volatile": true`. Это видимое решение, а не молчаливая потеря;
-* сбой источника (сеть, 404, 5xx, обрыв соединения и неполное чтение тела вроде `IncompleteRead`,
-  обрыв TLS) не роняет обход: записывается в состояние, печатается, а `check --fail-on-error`
-  возвращает 1 — удобно для cron;
-* **сбор и доставка разведены.** `scan` без `--publish` только складывает кандидатов в очередь:
-  хаб при этом не нужен, обход завершается с кодом 0, даже если хаб не запущен. Раньше публикация
-  была обязательной частью обхода, и ночной cron-обход 47 источников падал целиком на
-  `urllib.error.URLError: [Errno 111] Connection refused` — из-за публикации, а не из-за сканирования;
-* с `--publish` сбой доставки — видимая строка, а не traceback и не повод считать обход неудавшимся:
-  `изменился <url> → публикация не удалась: хаб недоступен: соединение отклонено`. Код возврата
-  `scan --once` по-прежнему значит «обход состоялся», а не «все доставки удались». То же и у
-  `retry`/`subs`: недоступный хаб — человеческое «повторите после запуска хаба» и код 0
-  (у ручного `publish` — код 1: публикация, которая не дошла, это провал команды);
+## The watcher and adapters
 
-## Список наблюдения музея
+The watcher answers "did the URL change?" (conditional GET, sha256 dedup, politeness, honest
+error lines for cron with `check --fail-on-error`). The adapter answers "what does it mean":
 
-47 источников собираются из архива, а не пишутся руками:
+| adapter | field | event |
+| --- | --- | --- |
+| `plain` | *(default)* | the raw body — exactly the pre-1.0 behavior |
+| `json` | `json_path: "tag_name"` | the value at the path; dedup by value — an API that adds counters to every response produces **no** phantom events |
+| `rss` / `atom` | `max_entries` (20), `per_entry` | one event per new or edited entry; the first pass seeds state and emits nothing |
 
-```bash
-python3 -m hubd watchlist --museum ../lost-tech-museum --out watchlist.json
-# источников: 47 (уникальных адресов: 47) → watchlist.json
-# по темам: arxiv=1, ietf=1, museum=2, rfc=38, rfc-graveyard=5
+The first pass of any adapter is an introduction, not news. A source without `ETag` /
+`Last-Modified` is considered noisy: events are suppressed until the watchlist says
+`"allow_volatile": true` — a visible decision, not a silent loss.
+
+## Plugins
 
 ```
-
-Что попадает в список:
-
-* для 19 RFC, на которые ссылается архив, — **статус** документа в дататрекере
-  (`/api/v1/doc/document/rfcNNNN/`, тема `rfc/rfcNNNN/status`) и **лента изменений**
-  (`/feed/document-changes/rfcNNNN/`, тема `rfc/rfcNNNN/changes`). Это ловит то, о чём музей
-  и предупреждает: понижение RFC из Internet Standard в Historic, errata, новую редакцию;
-* первоисточники записей на архивных хостах (W3C, OASIS, PubSubHubbub) — тема `<дайджест>/<id>`;
-* страницы самого музея (`museum/site`, `museum/digest/rfc-graveyard`): новая публикация архива
-  меняет ETag, и подписчики узнают об этом;
-* лента новых RFC в дататрекере и запрос к arXiv про устаревшие протоколы (`allow_volatile`).
-
-Чего в списке сознательно нет: текста самих RFC (он неизменяем, а его исчезновение — это проверка
-живости цитаты, а не событие обновления) и индекса всех RFC (13.7 МБ на обход ради того, что дешевле
-видно в ленте). Источники с новостных и вики-хостов пропускаются: `--all-hosts`, если нужны.
-
-### Рутина: scan → хаб → очередь кандидатов
-
-Сканер отвечает на вопрос «источник изменился?», а разбирать изменение (находка? цитата? дубль?)
-должен человек или хранитель архива. Поэтому между ними — очередь кандидатов:
-
-```bash
-# сбор: кандидаты в очередь, хаб не нужен и может быть не запущен
-python3 -m hubd scan --watchlist watchlist.json --state data/scan.json \
-    --queue data/candidates.jsonl --every 300
-# доставка: тот же обход плюс публикация — явный флаг, потому что хаб поднимают вручную
-python3 -m hubd scan --watchlist watchlist.json --state data/scan.json \
-    --queue data/candidates.jsonl --publish --hub http://127.0.0.1:8765 --every 300
-python3 -m hubd candidates --file data/candidates.jsonl --status new --show-sample
-python3 -m hubd candidates --file data/candidates.jsonl --reject <id кандидата> \
-    --reason "изменение вызвано нашей же публикацией"
+# plugins/drop_bots.py
+def transform(event, item):
+    return event if "bot" not in event["topic"] else None   # None = drop, visibly
 ```
 
-`--accept` и `--reject` принимают `--reason`: причина ложится в ту же строку очереди, рядом со
-статусом, и печатается в отчёте `candidates` под строкой кандидата — «rejected» без причины через
-месяц не отличается от «rejected» по ошибке. Без `--reason` всё как раньше: решение принимается,
-строка не обзаводится пустым полем. Повторный вызов на уже решённом кандидате — не ошибка: код 0,
-«уже отклонён — файл не менялся»; если причина в вызове другая, обновляется только она. Неизвестный
-`id` — по-прежнему код 1 и «кандидат … не найден», `--reason` без решения — код 2.
+```
+python3 -m hubd scan --watchlist watchlist.json --plugins plugins --once
+```
 
-Кандидат — это (тема, адрес, отпечаток). Возврат источника к уже разобранной версии **доставляется
-подписчикам** (содержимое темы правда изменилось), но **дубля в очереди не создаёт**. Так
-итерация 1 из `lost-tech-museum/docs/museum-bots.md` («список наблюдения + скан + очередь
-с дедупликацией») закрывается этим сканером, а не ещё одним скриптом.
+`extract(item, result, state)` replaces the adapter for sources with `"plugin": "name"`;
+`transform(event, item)` rewrites or drops events after any adapter. A crashing plugin is a
+visible line, not a broken scan. Plugins are trusted code: they run with hubd's rights.
 
-## Что проверено запуском
+## The client side (WebSub)
 
-| проверка | вывод |
-|---|---|
-| `python3 -m unittest discover -s tests -t .` | `Ran 104 tests … OK` (в том числе 11 новых на «хаб недоступен») |
-| `python3 -m hubd demo` | `итог: проверок 11, провалено 0 — работает` (включая очередь повторов и `hub.mode=denied`) |
-| `python3 -m hubd check --watchlist watchlist.json` (обход 1) | 47 источников, все `200` |
-| тот же обход 2 | 46 из 47 → `304` (условный GET работает; arXiv без валидаторов — `allow_volatile`) |
-| `python3 -m hubd scan --watchlist watchlist.json --queue data/candidates.jsonl --once` при выключенном хабе | код 0: `публикация в хаб: выключена …`, `изменений нет (47 источников)`, stderr пуст |
-| тот же `scan --once --publish --hub http://127.0.0.1:9` на локальной паре источник+хаб | код 0: `изменился … → публикация не удалась: хаб недоступен: соединение отклонено`, кандидат при этом записан в очередь |
-| тот же `scan --once --publish` с поднятым `hubd serve` | код 0: `публикация 200 …`, `публикаций: хаб принял 1, недоступен 0` |
-| `python3 -m hubd retry --hub http://127.0.0.1:9` | код 0: `хаб недоступен: соединение отклонено — повторите после запуска хаба` |
-| `python3 -m hubd retry --hub http://127.0.0.1:22` (порт открыт, но это sshd) | код 0: `хаб недоступен: порт отвечает, но это не HTTP-хаб (ответ не по HTTP)` |
-| рутина `scan → хаб → очередь` на живой HTTP-паре | 9 проверок: знакомство ≠ новость, изменение → кандидат + доставка, 304 → тишина, возврат к разобранной версии → доставка без дубля |
-| `python3 -m hubd candidates --file <копия живой очереди> --reject <id> --reason "…"` | код 0, затем та же строка в отчёте: `rejected` + `причина: …`; повтор с той же причиной — «уже отклонён — файл не менялся», md5 файла тот же |
+```
+python3 -m hubd listen --port 9001 --secret "rfc/*=s3cret"      # callback server, JSONL inbox
+python3 -m hubd discover --url https://example.org/feed         # find the advertised hub
+python3 -m hubd discover --url https://example.org/feed --subscribe \
+                         --callback http://127.0.0.1:9001/cb    # …and subscribe to it
+python3 -m hubd token                                           # publisher token + its sha256
+```
 
-Цифры обхода — это один конкретный прогон по живой сети, а не гарантия. Независимая проверка того же
-коммита дала на первом обходе 45 из 47: страница спецификации UDDI (2.1 МБ) оборвалась на середине
-(`IncompleteRead`), а API дататрекера по RFC 2156 упал на TLS (`UNEXPECTED_EOF`) — на втором обходе
-оба ответили. Это ровно то поведение, которое нужно: сбой источника печатается как «источник
-недоступен» с причиной и не роняет обход, вместо того чтобы спрятаться.
+`listen` echoes the challenge, logs `hub.mode=denied` with its reason, and stores every
+delivery in a JSONL journal — an invalid signature is saved with `signature_valid: false`,
+because a journal line is more honest than silence.
 
-## Ограничения (честный список)
+## Security
 
-* доставка **in-process**: хаб сам ходит по callback'ам, без TLS и без аутентификации издателя —
-  `POST /publish` открыт всем, кто дотянулся до порта. Для локальной рутины музея, не для интернета;
-* очередь повторов живёт в том же JSON, что подписки: тела до 256 КБ, без сжатия; десятки тысяч
-  записей такой файл обслуживать не будет;
-* нет `hub.mode=publish` (любимый способ пинга у публичных хабов) и нет обнаружения hub/topic
-  через `Link`-заголовки — подписчик указывает тему сам;
-* ответ подписчика `410` пока не снимает подписку автоматически (WebSub §7 это разрешает);
-* максимум аренды — 24 часа (WebSub советует не больше 10 дней, так что мы в рамках);
-* состояние — один процесс и один файл: два хаба на одном `--store` затрут друг друга;
-* публикация выключена по умолчанию: cron-обход собирает кандидатов без хаба, а доставку включает
-  явный `--publish` — в музее публикация остаётся ручным решением владельца, а не побочным
-  эффектом ночного обхода;
-* сканер не разбирает содержимое: он не вытаскивает цитаты и не решает, находка это или нет —
-  это работа триажа над очередью кандидатов.
+* **publisher tokens** — `serve --publish-tokens tokens.json`: the file holds sha256 hashes
+  only (a plaintext token in the config is a read error), tokens can be scoped with fnmatch
+  patterns (`"topics": ["rfc/*"]`), wrong token → `401` with a reason;
+* **topic policies** — `serve --policy policy.json` with `{"allow": [...], "deny": [...]}`;
+  `deny` wins over `allow`; `--topic-prefix` remains as sugar;
+* **TLS** — `serve --tls-cert cert.pem --tls-key key.pem`: same protocol, https on the wire;
+* by default the hub is open — that is the documented local-routine mode, not a hidden one.
 
-## Провенанс и соседи
+## What is verified by running
 
-* музей (только чтение): `lost-tech-museum`, дайджест
-  [`rfc-graveyard`](https://kostyk348.github.io/lost-tech-museum/digests/rfc-graveyard/);
-* записи архива, из которых собран hubd: `ipmulticast`, `pubsubhubbub`, `rsvp`, `atmip`, `time868`;
-* писатели архива: `data/*.json` — Archivessa, `stacks/` — Chartessa, `index.html` собирается скриптом.
-  hubd в эти каталоги не пишет никогда — только ссылается на `id`;
-* CI: `.github/workflows/tests.yml` — тесты на Python 3.11, 3.12, 3.13 без установки зависимостей.
+| check | output |
+| --- | --- |
+| `python3 -m unittest discover -s tests -t .` | `Ran 153 tests … OK` |
+| `python3 -m hubd demo` | `итог: проверок 11, провалено 0 — работает` |
+| TLS test | raises a real https server with a self-signed certificate |
+| token test | `401` without a token, scoped `401` on a foreign topic, `200` with the right one |
+| adapter tests | feeds emit only new entries; a value-stable noisy API emits nothing |
+
+## Limitations (honest ones)
+
+See [LIMITATIONS.md](LIMITATIONS.md). Notably: in-process delivery without publisher
+authentication by default, a single-file JSON store, plugins are trusted code, discovery is
+regex-based for HTML pages, and the hub is one process on one store.
+
+## Provenance and neighbours
+
+* museum (read-only): [lost-tech-museum](https://github.com/kostyk348/lost-tech-museum),
+  the [rfc-graveyard digest](https://kostyk348.github.io/lost-tech-museum/digests/rfc-graveyard/);
+* archive records this grew from: `ipmulticast`, `pubsubhubbub`, `rsvp`, `atmip`, `time868`;
+* pairs well with [MIME-OS / EMLBox](https://github.com/kostyk348/mime-os) — the events hubd
+  delivers are containers mime-os can store; and with
+  [EAFAR](https://github.com/kostyk348/eafar) when a sparse world needs to hear about changes.
+
+## Contributing
+
+PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Changes are tracked in
+[CHANGELOG.md](CHANGELOG.md).
+
+## License
+
+Apache-2.0 — see [LICENSE](LICENSE).
+
+**hubd** — publish to a topic, not to a list.
