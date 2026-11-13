@@ -1,4 +1,19 @@
+<div align="center">
+
+<img src="docs/banner.svg" alt="hubd banner" width="1000">
+
 # hubd
+
+[![tests](https://github.com/kostyk348/hubd/actions/workflows/tests.yml/badge.svg)](https://github.com/kostyk348/hubd/actions/workflows/tests.yml)
+[![Release](https://img.shields.io/github/v/release/kostyk348/hubd?sort=semver&color=blue)](https://github.com/kostyk348/hubd/releases)
+[![License](https://img.shields.io/badge/license-Apache--2.0-green)](https://github.com/kostyk348/hubd/blob/master/LICENSE)
+
+![Python](https://img.shields.io/badge/python-3.11%2B-informational)
+
+</div>
+
+---
+
 
 ### Stop polling. Subscribe once.
 
