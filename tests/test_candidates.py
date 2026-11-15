@@ -226,6 +226,40 @@ class CandidatesCliTestCase(unittest.TestCase):
         self.assertEqual(code, 2, out)
         self.assertIn("--reason без решения", out)
 
+    def test_rejected_source_is_not_requeued_on_changed_body(self):
+        """Лента меняет тело на каждом обходе — отклонённый источник не должен
+        возвращаться в очередь под новым отпечатком.
+
+        Живой случай: один arXiv-запрос набрал десять строк с одним и тем же
+        URL, потому что отпечаток содержимого каждый раз новый.
+        """
+        q = Candidates(os.path.join(tempfile.mkdtemp(), "settled.jsonl"))
+        url = "https://export.arxiv.org/api/query?search_query=abs:%22obsolete%22"
+        first = q.add("arxiv/obsolete-protocols", url, "digest-1", b"body one")
+        self.assertIsNotNone(first)
+        assert first is not None  # для типизации: add → Optional
+        q.decide(first["key"], "rejected", "тот же запрос, новизны нет")
+
+        again = q.add("arxiv/obsolete-protocols", url, "digest-2", b"body two")
+        self.assertIsNone(again, "отклонённый источник не заводится заново")
+        self.assertEqual(len(q.all()), 1)
+
+        accepted = q.add("ietf/rfc", "https://datatracker.ietf.org/feed/rfc/", "d3", b"x")
+        self.assertIsNotNone(accepted)
+        other = q.add("arxiv/obsolete-protocols",
+                      "https://export.arxiv.org/api/query?search_query=other", "d4", b"y")
+        self.assertIsNotNone(other, "другой URL того же источника — отдельный кандидат")
+
+    def test_accepted_row_does_not_block_a_new_body(self):
+        q = Candidates(os.path.join(tempfile.mkdtemp(), "accepted.jsonl"))
+        url = "https://example.org/feed"
+        row = q.add("museum/feed", url, "d1", b"a")
+        self.assertIsNotNone(row)
+        assert row is not None  # для типизации: add → Optional
+        q.decide(row["key"], "accepted", "цитата найдена")
+        again = q.add("museum/feed", url, "d2", b"b")
+        self.assertIsNotNone(again, "accepted — не отказ, источник снова кандидат")
+
 
 if __name__ == "__main__":
     unittest.main()

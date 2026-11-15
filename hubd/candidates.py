@@ -71,11 +71,33 @@ class Candidates:
                 return row
         return None
 
+    def settled(self, topic: str, url: str) -> dict | None:
+        """Отклонённая запись по тому же источнику; None — источник не «закрыт».
+
+        Дедупликация по отпечатку содержимого не работает для лент и
+        API-запросов: тот же arXiv-запрос и RFC-фид отдают слегка другое
+        тело на каждом обходе (даты, порядок свежих записей), поэтому
+        отпечаток меняется, ключ получается новый, и в очередь снова
+        ложится тот же самый источник — уже с готовым вердиктом «не
+        находка». Именно так один запрос набрал десять строк.
+
+        Правило: если по этой паре (тема, адрес) триаж уже сказал
+        «rejected», повторный обход её не заводит. Возврат к источнику
+        возможен осознанно — строку с отказом можно удалить из очереди.
+        """
+        for row in self.rows:
+            if (row.get("topic") == topic and row.get("url") == url
+                    and row.get("status") == "rejected"):
+                return row
+        return None
+
     def add(self, topic: str, url: str, digest: str, body: bytes = b"",
             status: str = "new", note: str = "") -> dict | None:
         """Кладёт кандидата. None — если такой кандидат уже в очереди."""
         key = candidate_key(topic, url, digest)
         if self.has(key):
+            return None
+        if self.settled(topic, url) is not None and status == "new":
             return None
         row = {
             "key": key, "at": self.clock(), "topic": topic, "url": url,
