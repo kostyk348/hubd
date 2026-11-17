@@ -2,9 +2,51 @@
  "comment": "Сгенерировано: python -m hubd watchlist --museum /home/lain/.hermes/profiles/libraressa/workspace/lost-tech-museum --out watchlist.json",
  "sources": [
   {
+   "url": "https://export.arxiv.org/api/query?search_query=abs:%22deprecated%22+AND+abs:%22standard%22&max_results=20",
+   "topic": "arxiv/deprecated-standards",
+   "note": "arXiv: выведенные из обращения стандарты и их наследие",
+   "allow_volatile": true,
+   "museum": []
+  },
+  {
+   "url": "https://export.arxiv.org/api/query?search_query=abs:%22legacy+protocol%22&max_results=20",
+   "topic": "arxiv/legacy-protocols",
+   "note": "arXiv: статьи про устаревшие протоколы в эксплуатации (legacy protocol)",
+   "allow_volatile": true,
+   "museum": []
+  },
+  {
+   "url": "https://export.arxiv.org/api/query?search_query=abs:%22obsolete%22+AND+abs:%22format%22&max_results=20",
+   "topic": "arxiv/obsolete-formats",
+   "note": "arXiv: мёртвые форматы файлов и данные, которые остались в них",
+   "allow_volatile": true,
+   "museum": []
+  },
+  {
    "url": "https://export.arxiv.org/api/query?search_query=abs:%22obsolete%22+AND+abs:%22protocol%22&max_results=20",
    "topic": "arxiv/obsolete-protocols",
    "note": "arXiv: свежие статьи про устаревшие протоколы; у API нет ETag — поэтому allow_volatile",
+   "allow_volatile": true,
+   "museum": []
+  },
+  {
+   "url": "https://export.arxiv.org/api/query?search_query=abs:%22Plan+9%22&max_results=20",
+   "topic": "arxiv/plan9",
+   "note": "arXiv: упоминания Plan 9 и его идей (пространства имён, 9P) в современных статьях",
+   "allow_volatile": true,
+   "museum": []
+  },
+  {
+   "url": "https://export.arxiv.org/api/query?search_query=abs:%22protocol%22+AND+abs:%22history%22&max_results=20",
+   "topic": "arxiv/protocol-history",
+   "note": "arXiv: история протоколов — где обычно и лежат забытые идеи",
+   "allow_volatile": true,
+   "museum": []
+  },
+  {
+   "url": "https://export.arxiv.org/api/query?search_query=abs:%22protocol+ossification%22&max_results=20",
+   "topic": "arxiv/protocol-ossification",
+   "note": "arXiv: окостенение протоколов — почему мёртвые стандарты не вытесняются",
    "allow_volatile": true,
    "museum": []
   },
@@ -40,6 +82,22 @@
    "note": "первоисточник записи «PubSubHubbub → WebSub — pubsub, который не стал слоем»",
    "museum": [
     "pubsubhubbub"
+   ]
+  },
+  {
+   "url": "https://www.rfc-editor.org/rfc/inline-errata/rfc1752.html",
+   "topic": "rfc-graveyard/sipp",
+   "note": "первоисточник записи «SIPP 64-bit — победитель, чьи решения не дожили»",
+   "museum": [
+    "sipp"
+   ]
+  },
+  {
+   "url": "https://www.rfc-editor.org/info/std26/",
+   "topic": "rfc-graveyard/time868",
+   "note": "первоисточник записи «Time Protocol — формально стандарт, де-факто музей»",
+   "museum": [
+    "time868"
    ]
   },
   {
