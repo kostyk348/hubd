@@ -58,17 +58,13 @@ SITE_SOURCES = (
         "allow_volatile": True,
         "note": "arXiv: свежие статьи про устаревшие протоколы; у API нет ETag — поэтому allow_volatile",
     },
-    # Запросы ниже добавлены, когда выяснилось, что один булев запрос выше — это
-    # исчерпанный корпус: одна и та же выдача, дедупликация честно отсекает её
-    # целиком, и музей неделю не получал кандидатов. У каждого — своя тема, чтобы
-    # в отчёте было видно, откуда пришла находка.
-    {
-        "url": ("https://export.arxiv.org/api/query?"
-                "search_query=abs:%22legacy+protocol%22&max_results=20"),
-        "topic": "arxiv/legacy-protocols",
-        "allow_volatile": True,
-        "note": "arXiv: статьи про устаревшие протоколы в эксплуатации (legacy protocol)",
-    },
+    # Запросы ниже добавлены после того, как один булев запрос оказался исчерпанным
+    # корпусом. Проверка на живых выдачах показала: keyword-поиск arXiv по
+    # аннотациям даёт в основном шум (XNS -> InxGa1-xN, DECnet -> нейросеть DecNet,
+    # legacy protocol -> ярлык для живых систем). Поэтому оставлен один тематический
+    # запрос (окостенение — прямая тема музея) и добавлены первоисточники-регистры
+    # IANA: там встречаются схемы и типы, которые были предложены и отозваны, и
+    # изменение страницы — это факт из реестра, а не совпадение слов.
     {
         "url": ("https://export.arxiv.org/api/query?"
                 "search_query=abs:%22protocol+ossification%22&max_results=20"),
@@ -77,32 +73,14 @@ SITE_SOURCES = (
         "note": "arXiv: окостенение протоколов — почему мёртвые стандарты не вытесняются",
     },
     {
-        "url": ("https://export.arxiv.org/api/query?"
-                "search_query=abs:%22deprecated%22+AND+abs:%22standard%22&max_results=20"),
-        "topic": "arxiv/deprecated-standards",
-        "allow_volatile": True,
-        "note": "arXiv: выведенные из обращения стандарты и их наследие",
+        "url": "https://www.iana.org/assignments/uri-schemes",
+        "topic": "iana/uri-schemes",
+        "note": "реестр схем URI: постоянные, временные и отозванные схемы (fax, modem, z39.50 и т.п.)",
     },
     {
-        "url": ("https://export.arxiv.org/api/query?"
-                "search_query=abs:%22Plan+9%22&max_results=20"),
-        "topic": "arxiv/plan9",
-        "allow_volatile": True,
-        "note": "arXiv: упоминания Plan 9 и его идей (пространства имён, 9P) в современных статьях",
-    },
-    {
-        "url": ("https://export.arxiv.org/api/query?"
-                "search_query=abs:%22obsolete%22+AND+abs:%22format%22&max_results=20"),
-        "topic": "arxiv/obsolete-formats",
-        "allow_volatile": True,
-        "note": "arXiv: мёртвые форматы файлов и данные, которые остались в них",
-    },
-    {
-        "url": ("https://export.arxiv.org/api/query?"
-                "search_query=abs:%22protocol%22+AND+abs:%22history%22&max_results=20"),
-        "topic": "arxiv/protocol-history",
-        "allow_volatile": True,
-        "note": "arXiv: история протоколов — где обычно и лежат забытые идеи",
+        "url": "https://www.iana.org/assignments/media-types/",
+        "topic": "iana/media-types",
+        "note": "реестр типов медиа: там же obsolescent/устаревшие типы и их предки",
     },
 )
 

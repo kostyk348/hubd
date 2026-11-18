@@ -2,44 +2,9 @@
  "comment": "Сгенерировано: python -m hubd watchlist --museum /home/lain/.hermes/profiles/libraressa/workspace/lost-tech-museum --out watchlist.json",
  "sources": [
   {
-   "url": "https://export.arxiv.org/api/query?search_query=abs:%22deprecated%22+AND+abs:%22standard%22&max_results=20",
-   "topic": "arxiv/deprecated-standards",
-   "note": "arXiv: выведенные из обращения стандарты и их наследие",
-   "allow_volatile": true,
-   "museum": []
-  },
-  {
-   "url": "https://export.arxiv.org/api/query?search_query=abs:%22legacy+protocol%22&max_results=20",
-   "topic": "arxiv/legacy-protocols",
-   "note": "arXiv: статьи про устаревшие протоколы в эксплуатации (legacy protocol)",
-   "allow_volatile": true,
-   "museum": []
-  },
-  {
-   "url": "https://export.arxiv.org/api/query?search_query=abs:%22obsolete%22+AND+abs:%22format%22&max_results=20",
-   "topic": "arxiv/obsolete-formats",
-   "note": "arXiv: мёртвые форматы файлов и данные, которые остались в них",
-   "allow_volatile": true,
-   "museum": []
-  },
-  {
    "url": "https://export.arxiv.org/api/query?search_query=abs:%22obsolete%22+AND+abs:%22protocol%22&max_results=20",
    "topic": "arxiv/obsolete-protocols",
    "note": "arXiv: свежие статьи про устаревшие протоколы; у API нет ETag — поэтому allow_volatile",
-   "allow_volatile": true,
-   "museum": []
-  },
-  {
-   "url": "https://export.arxiv.org/api/query?search_query=abs:%22Plan+9%22&max_results=20",
-   "topic": "arxiv/plan9",
-   "note": "arXiv: упоминания Plan 9 и его идей (пространства имён, 9P) в современных статьях",
-   "allow_volatile": true,
-   "museum": []
-  },
-  {
-   "url": "https://export.arxiv.org/api/query?search_query=abs:%22protocol%22+AND+abs:%22history%22&max_results=20",
-   "topic": "arxiv/protocol-history",
-   "note": "arXiv: история протоколов — где обычно и лежат забытые идеи",
    "allow_volatile": true,
    "museum": []
   },
@@ -48,6 +13,18 @@
    "topic": "arxiv/protocol-ossification",
    "note": "arXiv: окостенение протоколов — почему мёртвые стандарты не вытесняются",
    "allow_volatile": true,
+   "museum": []
+  },
+  {
+   "url": "https://www.iana.org/assignments/media-types/",
+   "topic": "iana/media-types",
+   "note": "реестр типов медиа: там же obsolescent/устаревшие типы и их предки",
+   "museum": []
+  },
+  {
+   "url": "https://www.iana.org/assignments/uri-schemes",
+   "topic": "iana/uri-schemes",
+   "note": "реестр схем URI: постоянные, временные и отозванные схемы (fax, modem, z39.50 и т.п.)",
    "museum": []
   },
   {
