@@ -2,6 +2,13 @@
  "comment": "Сгенерировано: python -m hubd watchlist --museum /home/lain/.hermes/profiles/libraressa/workspace/lost-tech-museum --out watchlist.json",
  "sources": [
   {
+   "url": "https://www.iana.org/assignments/dns-parameters/dns-parameters.xml",
+   "topic": "iana/dns-parameters",
+   "note": "реестр DNS-параметров (XML, 95 КБ): Reserved/Unassigned, метки только на изменение реестра",
+   "store_body": true,
+   "museum": []
+  },
+  {
    "url": "https://www.iana.org/assignments/media-types/media-types.xml",
    "topic": "iana/media-types",
    "note": "реестр типов медиа (XML): obsolescent-типы, устаревшие application/* и их предки",
@@ -12,6 +19,13 @@
    "url": "https://www.iana.org/assignments/protocol-numbers/protocol-numbers.xml",
    "topic": "iana/protocol-numbers",
    "note": "реестр номеров IP-протоколов (XML, 43 КБ, last-modified): назначение и освобождение номера — статусный факт",
+   "store_body": true,
+   "museum": []
+  },
+  {
+   "url": "https://www.iana.org/assignments/tls-parameters/tls-parameters.xml",
+   "topic": "iana/tls-parameters",
+   "note": "реестр TLS-параметров (XML, 313 КБ): у значений стоит машинная пометка «Obsoleted by rfcNNNN» — заброшенное размечено в самом теле",
    "store_body": true,
    "museum": []
   },

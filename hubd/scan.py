@@ -72,6 +72,9 @@ def default_fetcher(url: str, headers: dict[str, str], attempts: int = 3) -> tup
 class Watcher:
     """Следит за источниками и говорит, что изменилось."""
 
+    #: сколько подряд идущих неудач терпим, прежде чем поставить источник на паузу
+    QUARANTINE_AFTER = 3
+
     #: сколько строк/символов диффа показывать триажу (реестр на 13,8 МБ иначе утопит очередь)
     DIFF_LINES = 80
     DIFF_CHARS = 6000
@@ -86,6 +89,7 @@ class Watcher:
         self.state: dict[str, dict] = {}
         self.last_suppressed: list[dict] = []
         self.last_errors: list[dict] = []
+        self.last_skipped: list[dict] = []
         self._last_host_hit: dict[str, float] = {}
         self.load()
 
@@ -148,6 +152,29 @@ class Watcher:
         text = "\n".join(chunks[: self.DIFF_LINES])
         return text[: self.DIFF_CHARS]
 
+    def missing_fingerprints(self, watchlist: list[dict]) -> list[dict]:
+        """Источники, у которых так и нет отпечатка: молчащий источник — тоже дефект.
+
+        Триаж видит только кандидатов, поэтому «в списке есть, а изменений не приходит»
+        иначе выглядит как «всё спокойно». Здесь видно, когда источник последний раз
+        реально читался — «добавлен час назад» и «сломан месяц назад» это разные вещи.
+        """
+        missing = []
+        for item in watchlist:
+            url = item["url"]
+            entry = self.state.get(url) or {}
+            if entry.get("hash") is None:
+                last_ok = entry.get("last_ok")
+                missing.append({
+                    "url": url,
+                    "topic": item.get("topic", url),
+                    "last_ok": (time.strftime("%d.%m %H:%M", time.localtime(last_ok))
+                                if last_ok else "никогда"),
+                    "error": entry.get("error", ""),
+                    "checks": int(entry.get("checks") or 0),
+                })
+        return missing
+
     def wait_for_host(self, url: str) -> float:
         """Вежливость: не чаще min_interval секунд к одному хосту."""
         host = urlparse(url).netloc
@@ -169,6 +196,16 @@ class Watcher:
         он записывается в состояние и возвращается вызывающему как ошибка источника.
         """
         entry = self.state.setdefault(url, {"hash": None, "checks": 0, "changes": 0})
+        now = self.clock()
+        quarantined_until = entry.get("quarantine_until") or 0
+        if quarantined_until > now:
+            # Сломанный источник не должен стоить трафика на каждом обходе: 13,7 МБ
+            # трижды за проход — это то, на что указала Архивесса. Пауза растёт
+            # с числом подряд идущих неудач (до суток), успех её снимает.
+            return {"url": url, "changed": False, "status": 0, "skipped": True,
+                    "reason": "карантин до %s (%d неудач подряд)" % (
+                        time.strftime("%d.%m %H:%M", time.localtime(quarantined_until)),
+                        int(entry.get("fails") or 0))}
         headers = {"User-Agent": self.user_agent}
         if entry.get("etag"):
             headers["If-None-Match"] = entry["etag"]
@@ -197,11 +234,19 @@ class Watcher:
         if status == 304:
             entry["status"] = 304
             entry["error"] = ""
+            entry["fails"] = 0
+            entry["quarantine_until"] = 0
+            entry["last_ok"] = self.clock()
             self.save()
             return {"url": url, "changed": False, "status": 304, "reason": "not modified"}
 
         if status != 200:
             error = "источник недоступен (%s)" % network_error if status == 0 else "HTTP %s" % status
+            fails = int(entry.get("fails") or 0) + 1
+            entry["fails"] = fails
+            if fails >= self.QUARANTINE_AFTER:
+                pause = min(3600 * (2 ** (fails - self.QUARANTINE_AFTER)), 24 * 3600)
+                entry["quarantine_until"] = self.clock() + pause
             entry["status"] = status
             entry["error"] = error
             self.save()
@@ -214,6 +259,9 @@ class Watcher:
                           or resp_headers.get("etag") or resp_headers.get("last-modified"))
         entry.update({
             "status": 200,
+            "fails": 0,
+            "quarantine_until": 0,
+            "last_ok": self.clock(),
             "hash": digest,
             "bytes": len(body),
             "validators": validators,
@@ -260,10 +308,15 @@ class Watcher:
         events = []
         self.last_suppressed = []
         self.last_errors = []
+        self.last_skipped = []
         self._adapter_dirty = False
         for item in watchlist:
             url = item["url"]
             result = self.check(url, store_body=bool(item.get("store_body")))
+            if result.get("skipped"):
+                self.last_skipped.append({"url": url, "topic": item.get("topic", url),
+                                          "reason": result.get("reason", "")})
+                continue
             if result.get("error"):
                 self.last_errors.append({"url": url, "topic": item.get("topic", url),
                                          "status": result["status"], "error": result["error"]})

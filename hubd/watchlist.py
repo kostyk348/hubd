@@ -81,6 +81,18 @@ SITE_SOURCES = (
         "note": "реестр номеров IP-протоколов (XML, 43 КБ, last-modified): назначение и освобождение номера — статусный факт",
     },
     {
+        "url": "https://www.iana.org/assignments/tls-parameters/tls-parameters.xml",
+        "topic": "iana/tls-parameters",
+        "store_body": True,
+        "note": "реестр TLS-параметров (XML, 313 КБ): у значений стоит машинная пометка «Obsoleted by rfcNNNN» — заброшенное размечено в самом теле",
+    },
+    {
+        "url": "https://www.iana.org/assignments/dns-parameters/dns-parameters.xml",
+        "topic": "iana/dns-parameters",
+        "store_body": True,
+        "note": "реестр DNS-параметров (XML, 95 КБ): Reserved/Unassigned, метки только на изменение реестра",
+    },
+    {
         "url": "https://www.rfc-editor.org/rfc-index.xml",
         "topic": "rfc-editor/rfc-index",
         "store_body": True,

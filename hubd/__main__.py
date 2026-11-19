@@ -268,8 +268,17 @@ def cmd_scan(args) -> int:
             print("изменений нет (%d источников)" % len(watchlist))
         for error in watcher.last_errors:
             print("источник недоступен: %s — %s" % (error["url"], error["error"]))
+        for skipped in watcher.last_skipped:
+            print("источник на паузе: %s — %s" % (skipped["url"], skipped["reason"]))
         for suppressed in watcher.last_suppressed:
             print("событие подавлено: %s — %s" % (suppressed["url"], suppressed["reason"]))
+        silent = watcher.missing_fingerprints(watchlist)
+        if silent:
+            print("источников без отпечатка: %d" % len(silent))
+            for item in silent:
+                print("  %s — последнее успешное чтение: %s, обходов: %d%s" % (
+                    item["url"], item["last_ok"], item["checks"],
+                    (" (%s)" % item["error"]) if item["error"] else ""))
         if args.once:
             return 0
         time.sleep(args.every)
