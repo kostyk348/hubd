@@ -72,6 +72,16 @@ SITE_SOURCES = (
         "topic": "iana/media-types",
         "note": "реестр типов медиа (XML): obsolescent-типы, устаревшие application/* и их предки",
     },
+    {
+        "url": "https://www.iana.org/assignments/protocol-numbers/protocol-numbers.xml",
+        "topic": "iana/protocol-numbers",
+        "note": "реестр номеров IP-протоколов (XML, 43 КБ, last-modified): назначение и освобождение номера — статусный факт",
+    },
+    {
+        "url": "https://www.rfc-editor.org/rfc-index.xml",
+        "topic": "rfc-editor/rfc-index",
+        "note": "индекс RFC (13,76 МБ, ETag): единственное машинное место со статусом каждого RFC — Historic/Obsoleted/Standard; тяжёлый, поэтому только условный GET",
+    },
 )
 
 

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
 import tempfile
@@ -18,14 +19,28 @@ from urllib.parse import urlparse
 from .adapters import AdapterError, run_adapter
 
 
-def default_fetcher(url: str, headers: dict[str, str]) -> tuple[int, dict[str, str], bytes]:
-    """Возвращает (код, заголовки, тело). 304 — если источник не менялся."""
-    req = urllib.request.Request(url, headers=headers, method="GET")
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return resp.status, dict(resp.headers), resp.read()
-    except urllib.error.HTTPError as exc:
-        return exc.code, dict(exc.headers or {}), exc.read() if exc.fp else b""
+def default_fetcher(url: str, headers: dict[str, str], attempts: int = 3) -> tuple[int, dict[str, str], bytes]:
+    """Возвращает (код, заголовки, тело). 304 — если источник не менялся.
+
+    Транзиентные обрывы повторяются: на этой машине TLS-соединения к крупным
+    архивам рвутся на середине тела (`IncompleteRead` на 13.5 МБ у rfc-index.xml),
+    и без повтора статусный источник навсегда остаётся «недоступен», хотя он жив.
+    HTTP-ошибки (404, 403, 429) НЕ повторяются — это ответ сервера, а не сеть.
+    """
+    last_error: Exception | None = None
+    for attempt in range(attempts):
+        req = urllib.request.Request(url, headers=headers, method="GET")
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                return resp.status, dict(resp.headers), resp.read()
+        except urllib.error.HTTPError as exc:
+            return exc.code, dict(exc.headers or {}), exc.read() if exc.fp else b""
+        except (urllib.error.URLError, http.client.IncompleteRead, ConnectionError,
+                TimeoutError, OSError) as exc:
+            last_error = exc
+            if attempt + 1 < attempts:
+                time.sleep(1.5 * (attempt + 1))
+    raise last_error if last_error else RuntimeError("fetch failed without an error")
 
 
 class Watcher:

@@ -124,9 +124,19 @@ class WatchlistTestCase(unittest.TestCase):
         self.assertIn("museum/site", topics)
         self.assertIn("museum/digest/rfc-graveyard", topics)
         self.assertIn("ietf/rfc-feed", topics)
-        self.assertIn("arxiv/obsolete-protocols", topics)
-        arxiv = next(s for s in sources if s["topic"] == "arxiv/obsolete-protocols")
-        self.assertTrue(arxiv["allow_volatile"], "у arXiv API нет ETag — это осознанное решение")
+        # arXiv снят из наблюдения по критерию из журнала триажа музея: 13 кандидатов
+        # с keyword-поиска по аннотациям дали 0 записей в архив. arXiv публикует
+        # предложения и обзоры, музею нужны вещи с судьбой (Historic/Obsoleted).
+        self.assertFalse(any(topic.startswith("arxiv/") for topic in topics),
+                         "keyword-поиск arXiv музею экспонатов не даёт — см. docs/triage-log.md")
+        # Вместо него — реестры и индекс со статусом каждого документа.
+        self.assertIn("iana/uri-schemes", topics)
+        self.assertIn("iana/media-types", topics)
+        self.assertIn("iana/protocol-numbers", topics)
+        self.assertIn("rfc-editor/rfc-index", topics)
+        index = next(s for s in sources if s["topic"] == "rfc-editor/rfc-index")
+        self.assertFalse(index.get("allow_volatile", False),
+                         "у rfc-index.xml есть ETag — тяжёлый источник обязан идти условным GET")
 
     def test_every_source_has_url_topic_note(self):
         sources, _ = self.build()
