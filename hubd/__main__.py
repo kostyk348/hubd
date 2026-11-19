@@ -273,8 +273,10 @@ def cmd_scan(args) -> int:
         for suppressed in watcher.last_suppressed:
             print("событие подавлено: %s — %s" % (suppressed["url"], suppressed["reason"]))
         silent = watcher.missing_fingerprints(watchlist)
+        # Печатаем всегда, даже ноль: строка, которая появляется только при проблеме,
+        # заставляет гадать, был ли отчёт вообще. Ноль — это тоже факт для журнала.
+        print("источников без отпечатка: %d из %d" % (len(silent), len(watchlist)))
         if silent:
-            print("источников без отпечатка: %d" % len(silent))
             for item in silent:
                 print("  %s — последнее успешное чтение: %s, обходов: %d%s" % (
                     item["url"], item["last_ok"], item["checks"],
