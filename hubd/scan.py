@@ -69,65 +69,93 @@ def default_fetcher(url: str, headers: dict[str, str], attempts: int = 3) -> tup
     raise last_error if last_error else RuntimeError("fetch failed without an error")
 
 
-def parse_rfc_index(raw: bytes) -> dict[str, tuple[str, str]]:
-    """doc-id -> (current-status, stream). Пустой словарь, если XML не разобрался."""
+def parse_rfc_index(raw: bytes) -> dict[str, dict[str, str]]:
+    """doc-id -> {current-status, publication-status, stream, title}. Пусто, если XML не разобрался."""
     import xml.etree.ElementTree as ET
-    table: dict[str, tuple[str, str]] = {}
+    table: dict[str, dict[str, str]] = {}
     if not raw:
         return table
     try:
         root = ET.fromstring(raw)
     except ET.ParseError:
         return table
+    wanted = {"current-status", "publication-status", "stream", "title"}
     for entry in root.iter():
         if not entry.tag.endswith("rfc-entry"):
             continue
-        doc = status = stream = ""
+        row: dict[str, str] = {}
         for child in entry:
             tag = child.tag.rsplit("}", 1)[-1]
             if tag == "doc-id":
-                doc = (child.text or "").strip()
-            elif tag == "current-status":
-                status = (child.text or "").strip()
-            elif tag == "stream":
-                stream = (child.text or "").strip()
+                row["doc-id"] = (child.text or "").strip()
+            elif tag in wanted:
+                row[tag] = " ".join((child.text or "").split())
+        doc = row.get("doc-id", "")
         if doc:
-            table[doc] = (status, stream)
+            table[doc] = row
     return table
+
+
+def _projection_line(marker: str, doc: str, row: dict[str, str]) -> str:
+    parts = ["%s%s" % (marker, doc)]
+    if row.get("current-status"):
+        parts.append("current-status: %s" % row["current-status"])
+    if row.get("publication-status"):
+        parts.append("publication-status: %s" % row["publication-status"])
+    if row.get("stream"):
+        parts.append("(stream: %s)" % row["stream"])
+    return "  ".join(parts)
 
 
 def project_rfc_index_status(previous: bytes, current: bytes,
                              limit_lines: int = 80, limit_chars: int = 6000) -> str:
     """Проекция статусов вместо сырого диффа: одна смена — одна-две строки.
 
-    Сырой unified diff по 13,8 МБ XML в 80 строк вмещает восемь смен и не говорит,
-    какой документ поменял судьбу. Проекция `doc-id -> current-status` даёт строку,
-    которая сама себя объясняет: «-RFC1347 current-status: PROPOSED STANDARD ... +RFC1347
-    current-status: HISTORIC». Если XML не разобрался — пустая строка, и вызывающий
-    падает обратно на сырой дифф.
+    Сырой unified diff по 13,8 МБ XML тратит бюджет на теги и отступы: одна смена
+    статуса съедает 5-7 строк, и в 80 строк влезает восемь смен. Проекция
+    `doc-id -> поля` даёт строку, которая сама себя объясняет, и в тот же бюджет
+    влезает около сорока смен. Заголовок считает, сколько смен показано, а сколько
+    отрезано — иначе триаж не знает, попал ли в образец весь дифф.
     """
     before = parse_rfc_index(previous)
     after = parse_rfc_index(current)
     if not before or not after:
         return ""
-    changed = [(doc, before[doc], after[doc]) for doc in sorted(after)
-               if doc in before and before[doc] != after[doc]]
-    added = [doc for doc in sorted(after) if doc not in before]
-    removed = [doc for doc in sorted(before) if doc not in after]
-    total = len(changed) + len(added) + len(removed)
+    fields = ("current-status", "publication-status", "stream", "title")
+    changed: list[tuple[str, dict, dict]] = []
+    for doc in sorted(after):
+        if doc not in before:
+            changed.append((doc, {}, after[doc]))
+        elif any(before[doc].get(f) != after[doc].get(f) for f in fields):
+            changed.append((doc, before[doc], after[doc]))
+    for doc in sorted(before):
+        if doc not in after:
+            changed.append((doc, before[doc], {}))
+    total = len(changed)
     if total == 0:
         return ""
-    lines = ["изменено записей: %d" % total]
-    for doc, (old_status, old_stream), (new_status, new_stream) in changed:
-        lines.append("-%s  current-status: %s  (stream: %s)" % (doc, old_status, old_stream))
-        lines.append("+%s  current-status: %s  (stream: %s)" % (doc, new_status, new_stream))
-    for doc in added:
-        lines.append("+%s  новая запись  current-status: %s  (stream: %s)"
-                     % (doc, after[doc][0], after[doc][1]))
-    for doc in removed:
-        lines.append("-%s  запись исчезла  current-status: %s  (stream: %s)"
-                     % (doc, before[doc][0], before[doc][1]))
-    return "\n".join(lines[:limit_lines])[:limit_chars]
+    lines: list[str] = []
+    shown = 0
+    for doc, old, new in changed:
+        if old and new:
+            pair = [_projection_line("-", doc, old), _projection_line("+", doc, new)]
+            if old.get("title") != new.get("title"):
+                # Заголовок печатаем только когда он изменился: иначе строка про
+                # статус выглядела бы неизменившейся, а смена была бы в title.
+                pair.append("   \u00ab%s\u00bb -> \u00ab%s\u00bb" % (
+                    old.get("title", ""), new.get("title", "")))
+        elif new:
+            pair = ["%s  новая запись  %s" % (_projection_line("+", doc, new), "")]
+        else:
+            pair = ["%s  запись исчезла  %s" % (_projection_line("-", doc, old), "")]
+        if len(lines) + len(pair) + 1 > limit_lines:
+            break
+        lines.extend(pair)
+        shown += 1
+    tail = "" if shown == total else ", обрезано"
+    header = "изменено записей: %d (показано %d%s)" % (total, shown, tail)
+    cleaned = [line.replace("  \n", "\n").rstrip() for line in [header] + lines]
+    return "\n".join(cleaned)[:limit_chars]
 
 
 class Watcher:

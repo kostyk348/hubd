@@ -410,8 +410,13 @@ def cmd_candidates(args) -> int:
                 # Дифф/проекция читаются только построчно: склейка в одну строку
                 # с обрезкой на 160 символах убивала именно то, ради чего дифф нужен —
                 # «что» изменилось, а не «что-то изменилось» (замечание триажа).
-                for line in sample.splitlines():
+                # Хвост не режем молча: пишем, сколько строк осталось за кадром.
+                lines = sample.splitlines()
+                shown = lines if args.show_diff else lines[:20]
+                for line in shown:
                     print("      | %s" % line)
+                if len(lines) > len(shown):
+                    print("      | … ещё %d строк (--show-diff покажет все)" % (len(lines) - len(shown)))
             else:
                 print("      %s" % sample.replace("\n", " ")[:160])
     return code
