@@ -2,29 +2,15 @@
  "comment": "Сгенерировано: python -m hubd watchlist --museum /home/lain/.hermes/profiles/libraressa/workspace/lost-tech-museum --out watchlist.json",
  "sources": [
   {
-   "url": "https://export.arxiv.org/api/query?search_query=abs:%22obsolete%22+AND+abs:%22protocol%22&max_results=20",
-   "topic": "arxiv/obsolete-protocols",
-   "note": "arXiv: свежие статьи про устаревшие протоколы; у API нет ETag — поэтому allow_volatile",
-   "allow_volatile": true,
-   "museum": []
-  },
-  {
-   "url": "https://export.arxiv.org/api/query?search_query=abs:%22protocol+ossification%22&max_results=20",
-   "topic": "arxiv/protocol-ossification",
-   "note": "arXiv: окостенение протоколов — почему мёртвые стандарты не вытесняются",
-   "allow_volatile": true,
-   "museum": []
-  },
-  {
-   "url": "https://www.iana.org/assignments/media-types/",
+   "url": "https://www.iana.org/assignments/media-types/media-types.xml",
    "topic": "iana/media-types",
-   "note": "реестр типов медиа: там же obsolescent/устаревшие типы и их предки",
+   "note": "реестр типов медиа (XML): obsolescent-типы, устаревшие application/* и их предки",
    "museum": []
   },
   {
-   "url": "https://www.iana.org/assignments/uri-schemes",
+   "url": "https://www.iana.org/assignments/uri-schemes/uri-schemes-1.csv",
    "topic": "iana/uri-schemes",
-   "note": "реестр схем URI: постоянные, временные и отозванные схемы (fax, modem, z39.50 и т.п.)",
+   "note": "реестр схем URI (CSV, 35 КБ): permanent/provisional/historical, в т.ч. отозванные схемы",
    "museum": []
   },
   {

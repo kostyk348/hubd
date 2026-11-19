@@ -51,36 +51,26 @@ SITE_SOURCES = (
         "topic": "ietf/rfc-feed",
         "note": "лента новых RFC в дататрекере: дешевле, чем индекс RFC целиком (13.7 МБ)",
     },
+    # arXiv из наблюдения снят: журнал триажа показал 13 кандидатов с keyword-поиска
+    # по аннотациям и НОЛЬ записей в архиве. Причина структурная: arXiv публикует
+    # предложения и обзоры, а музею нужны вещи с судьбой (Historic/Obsoleted, errata,
+    # ленты изменений документа) — см. docs/triage-log.md музея. Отдельная беда
+    # abs:"obsolete" AND abs:"protocol" — один и тот же корпус приходил «новым»
+    # кандидатом при смене байтового отпечатка выдачи: у API нет ETag.
+    #
+    # Вместо arXiv — машиночитаемые регистры IANA (.csv/.xml, без временных меток
+    # в теле): там встречаются предложенные и отозванные схемы и типы, а изменение
+    # файла — факт из реестра с цитатой, а не совпадение слов. Файл стабилен, поэтому
+    # ложных «новых» кандидатов из-за дрожания байтов быть не может.
     {
-        "url": ("https://export.arxiv.org/api/query?"
-                "search_query=abs:%22obsolete%22+AND+abs:%22protocol%22&max_results=20"),
-        "topic": "arxiv/obsolete-protocols",
-        "allow_volatile": True,
-        "note": "arXiv: свежие статьи про устаревшие протоколы; у API нет ETag — поэтому allow_volatile",
-    },
-    # Запросы ниже добавлены после того, как один булев запрос оказался исчерпанным
-    # корпусом. Проверка на живых выдачах показала: keyword-поиск arXiv по
-    # аннотациям даёт в основном шум (XNS -> InxGa1-xN, DECnet -> нейросеть DecNet,
-    # legacy protocol -> ярлык для живых систем). Поэтому оставлен один тематический
-    # запрос (окостенение — прямая тема музея) и добавлены первоисточники-регистры
-    # IANA: там встречаются схемы и типы, которые были предложены и отозваны, и
-    # изменение страницы — это факт из реестра, а не совпадение слов.
-    {
-        "url": ("https://export.arxiv.org/api/query?"
-                "search_query=abs:%22protocol+ossification%22&max_results=20"),
-        "topic": "arxiv/protocol-ossification",
-        "allow_volatile": True,
-        "note": "arXiv: окостенение протоколов — почему мёртвые стандарты не вытесняются",
-    },
-    {
-        "url": "https://www.iana.org/assignments/uri-schemes",
+        "url": "https://www.iana.org/assignments/uri-schemes/uri-schemes-1.csv",
         "topic": "iana/uri-schemes",
-        "note": "реестр схем URI: постоянные, временные и отозванные схемы (fax, modem, z39.50 и т.п.)",
+        "note": "реестр схем URI (CSV, 35 КБ): permanent/provisional/historical, в т.ч. отозванные схемы",
     },
     {
-        "url": "https://www.iana.org/assignments/media-types/",
+        "url": "https://www.iana.org/assignments/media-types/media-types.xml",
         "topic": "iana/media-types",
-        "note": "реестр типов медиа: там же obsolescent/устаревшие типы и их предки",
+        "note": "реестр типов медиа (XML): obsolescent-типы, устаревшие application/* и их предки",
     },
 )
 
