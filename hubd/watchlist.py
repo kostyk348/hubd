@@ -95,6 +95,7 @@ SITE_SOURCES = (
     {
         "url": "https://www.rfc-editor.org/rfc-index.xml",
         "topic": "rfc-editor/rfc-index",
+        "projection": "rfc-index-status",
         "store_body": True,
         "note": "индекс RFC (13,76 МБ, ETag): единственное машинное место со статусом каждого RFC — Historic/Obsoleted/Standard; тяжёлый, поэтому только условный GET",
     },
@@ -109,7 +110,8 @@ def _host_allowed(host: str, include_all: bool) -> bool:
 
 
 def _add(sources: dict, url: str, topic: str, note: str, museum_id: str,
-         allow_volatile: bool = False, store_body: bool = False) -> None:
+         allow_volatile: bool = False, store_body: bool = False,
+         projection: str = "") -> None:
     """Один адрес — один источник: разные записи архива просто добавляют себе в провенанс."""
     source = sources.get(url)
     if source is None:
@@ -119,6 +121,9 @@ def _add(sources: dict, url: str, topic: str, note: str, museum_id: str,
         if store_body:
             # реестр: без прошлого тела триаж получает «файл изменился», а не дифф
             fresh["store_body"] = True
+        if projection:
+            # проекция вместо сырого диффа: одна смена статуса — одна строка
+            fresh["projection"] = projection
         fresh["museum"] = []
         sources[url] = fresh
         source = fresh
@@ -170,7 +175,8 @@ def from_museum(museum_dir: str, slugs: list[str] | None = None,
     for item in SITE_SOURCES:
         _add(sources, item["url"], item["topic"], item["note"], "",
              allow_volatile=bool(item.get("allow_volatile")),
-             store_body=bool(item.get("store_body")))
+             store_body=bool(item.get("store_body")),
+             projection=item.get("projection", ""))
     return sorted(sources.values(), key=lambda s: (s["topic"], s["url"])), skipped
 
 

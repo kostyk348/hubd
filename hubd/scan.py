@@ -69,6 +69,67 @@ def default_fetcher(url: str, headers: dict[str, str], attempts: int = 3) -> tup
     raise last_error if last_error else RuntimeError("fetch failed without an error")
 
 
+def parse_rfc_index(raw: bytes) -> dict[str, tuple[str, str]]:
+    """doc-id -> (current-status, stream). Пустой словарь, если XML не разобрался."""
+    import xml.etree.ElementTree as ET
+    table: dict[str, tuple[str, str]] = {}
+    if not raw:
+        return table
+    try:
+        root = ET.fromstring(raw)
+    except ET.ParseError:
+        return table
+    for entry in root.iter():
+        if not entry.tag.endswith("rfc-entry"):
+            continue
+        doc = status = stream = ""
+        for child in entry:
+            tag = child.tag.rsplit("}", 1)[-1]
+            if tag == "doc-id":
+                doc = (child.text or "").strip()
+            elif tag == "current-status":
+                status = (child.text or "").strip()
+            elif tag == "stream":
+                stream = (child.text or "").strip()
+        if doc:
+            table[doc] = (status, stream)
+    return table
+
+
+def project_rfc_index_status(previous: bytes, current: bytes,
+                             limit_lines: int = 80, limit_chars: int = 6000) -> str:
+    """Проекция статусов вместо сырого диффа: одна смена — одна-две строки.
+
+    Сырой unified diff по 13,8 МБ XML в 80 строк вмещает восемь смен и не говорит,
+    какой документ поменял судьбу. Проекция `doc-id -> current-status` даёт строку,
+    которая сама себя объясняет: «-RFC1347 current-status: PROPOSED STANDARD ... +RFC1347
+    current-status: HISTORIC». Если XML не разобрался — пустая строка, и вызывающий
+    падает обратно на сырой дифф.
+    """
+    before = parse_rfc_index(previous)
+    after = parse_rfc_index(current)
+    if not before or not after:
+        return ""
+    changed = [(doc, before[doc], after[doc]) for doc in sorted(after)
+               if doc in before and before[doc] != after[doc]]
+    added = [doc for doc in sorted(after) if doc not in before]
+    removed = [doc for doc in sorted(before) if doc not in after]
+    total = len(changed) + len(added) + len(removed)
+    if total == 0:
+        return ""
+    lines = ["изменено записей: %d" % total]
+    for doc, (old_status, old_stream), (new_status, new_stream) in changed:
+        lines.append("-%s  current-status: %s  (stream: %s)" % (doc, old_status, old_stream))
+        lines.append("+%s  current-status: %s  (stream: %s)" % (doc, new_status, new_stream))
+    for doc in added:
+        lines.append("+%s  новая запись  current-status: %s  (stream: %s)"
+                     % (doc, after[doc][0], after[doc][1]))
+    for doc in removed:
+        lines.append("-%s  запись исчезла  current-status: %s  (stream: %s)"
+                     % (doc, before[doc][0], before[doc][1]))
+    return "\n".join(lines[:limit_lines])[:limit_chars]
+
+
 class Watcher:
     """Следит за источниками и говорит, что изменилось."""
 
@@ -143,8 +204,8 @@ class Watcher:
         говорит «файл изменился, разбирайся сам»).
         """
         try:
-            old_lines = previous.decode("utf-8", "replace").splitlines(keepends=True)
-            new_lines = current.decode("utf-8", "replace").splitlines(keepends=True)
+            old_lines = previous.decode("utf-8", "replace").splitlines()
+            new_lines = current.decode("utf-8", "replace").splitlines()
         except Exception:                                    # noqa: BLE001 — дифф не критичен
             return ""
         chunks = list(difflib.unified_diff(old_lines, new_lines, fromfile="было", tofile="стало",
@@ -189,7 +250,7 @@ class Watcher:
         self._last_host_hit[host] = self.clock()
         return waited
 
-    def check(self, url: str, store_body: bool = False) -> dict:
+    def check(self, url: str, store_body: bool = False, projection: str = "") -> dict:
         """Один источник: условный GET, сверка с отпечатком содержимого.
 
         Сбой источника (сеть, 5xx, 404) — это результат обхода, а не повод уронить весь скан:
@@ -275,7 +336,12 @@ class Watcher:
             # получит «файл изменился» вместо «строка X: Internet Standard -> Historic».
             previous = self.read_body(url)
             if changed and previous is not None:
-                diff_text = self.diff(previous, body)
+                diff_text = ""
+                if projection == "rfc-index-status":
+                    diff_text = project_rfc_index_status(previous, body,
+                                                         self.DIFF_LINES, self.DIFF_CHARS)
+                if not diff_text:
+                    diff_text = self.diff(previous, body)   # фолбэк: CSV и прочее сырьё
             self.write_body(url, body)
         if changed:
             entry["changes"] += 1
@@ -312,7 +378,8 @@ class Watcher:
         self._adapter_dirty = False
         for item in watchlist:
             url = item["url"]
-            result = self.check(url, store_body=bool(item.get("store_body")))
+            result = self.check(url, store_body=bool(item.get("store_body")),
+                                projection=item.get("projection", ""))
             if result.get("skipped"):
                 self.last_skipped.append({"url": url, "topic": item.get("topic", url),
                                           "reason": result.get("reason", "")})

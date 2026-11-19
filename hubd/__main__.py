@@ -404,8 +404,16 @@ def cmd_candidates(args) -> int:
         print("  %s  %-9s %-30s %s" % (row["key"], row.get("status"), row["topic"], row["url"]))
         if row.get("note"):
             print("      причина: %s" % row["note"].replace("\n", " ")[:200])
-        if row.get("sample") and args.show_sample:
-            print("      %s" % row["sample"].replace("\n", " ")[:160])
+        if row.get("sample") and (args.show_sample or args.show_diff):
+            sample = row["sample"]
+            if args.show_diff or "\n" in sample:
+                # Дифф/проекция читаются только построчно: склейка в одну строку
+                # с обрезкой на 160 символах убивала именно то, ради чего дифф нужен —
+                # «что» изменилось, а не «что-то изменилось» (замечание триажа).
+                for line in sample.splitlines():
+                    print("      | %s" % line)
+            else:
+                print("      %s" % sample.replace("\n", " ")[:160])
     return code
 
 
@@ -707,6 +715,8 @@ def main(argv=None) -> int:
     p.add_argument("--status", choices=["new", "accepted", "rejected"], default="")
     p.add_argument("--limit", type=int, default=20)
     p.add_argument("--show-sample", action="store_true")
+    p.add_argument("--show-diff", action="store_true",
+                   help="показать образец/дифф кандидата многострочно, как он есть")
     p.add_argument("--accept", default="", help="id кандидата, который триаж принял")
     p.add_argument("--reject", default="", help="id кандидата, который триаж отклонил")
     p.add_argument("--reason", default="",

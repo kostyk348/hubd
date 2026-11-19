@@ -59,6 +59,7 @@
    "topic": "rfc-editor/rfc-index",
    "note": "индекс RFC (13,76 МБ, ETag): единственное машинное место со статусом каждого RFC — Historic/Obsoleted/Standard; тяжёлый, поэтому только условный GET",
    "store_body": true,
+   "projection": "rfc-index-status",
    "museum": []
   },
   {
