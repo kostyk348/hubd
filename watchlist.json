@@ -5,12 +5,21 @@
    "url": "https://www.iana.org/assignments/media-types/media-types.xml",
    "topic": "iana/media-types",
    "note": "реестр типов медиа (XML): obsolescent-типы, устаревшие application/* и их предки",
+   "store_body": true,
+   "museum": []
+  },
+  {
+   "url": "https://www.iana.org/assignments/protocol-numbers/protocol-numbers.xml",
+   "topic": "iana/protocol-numbers",
+   "note": "реестр номеров IP-протоколов (XML, 43 КБ, last-modified): назначение и освобождение номера — статусный факт",
+   "store_body": true,
    "museum": []
   },
   {
    "url": "https://www.iana.org/assignments/uri-schemes/uri-schemes-1.csv",
    "topic": "iana/uri-schemes",
    "note": "реестр схем URI (CSV, 35 КБ): permanent/provisional/historical, в т.ч. отозванные схемы",
+   "store_body": true,
    "museum": []
   },
   {
@@ -29,6 +38,13 @@
    "url": "https://kostyk348.github.io/lost-tech-museum/",
    "topic": "museum/site",
    "note": "главная музея: новая публикация архива меняет ETag страницы",
+   "museum": []
+  },
+  {
+   "url": "https://www.rfc-editor.org/rfc-index.xml",
+   "topic": "rfc-editor/rfc-index",
+   "note": "индекс RFC (13,76 МБ, ETag): единственное машинное место со статусом каждого RFC — Historic/Obsoleted/Standard; тяжёлый, поэтому только условный GET",
+   "store_body": true,
    "museum": []
   },
   {

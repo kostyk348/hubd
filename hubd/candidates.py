@@ -92,7 +92,7 @@ class Candidates:
         return None
 
     def add(self, topic: str, url: str, digest: str, body: bytes = b"",
-            status: str = "new", note: str = "") -> dict | None:
+            status: str = "new", note: str = "", sample: str = "") -> dict | None:
         """Кладёт кандидата. None — если такой кандидат уже в очереди."""
         key = candidate_key(topic, url, digest)
         if self.has(key):
@@ -102,7 +102,7 @@ class Candidates:
         row = {
             "key": key, "at": self.clock(), "topic": topic, "url": url,
             "digest": digest, "bytes": len(body), "status": status, "note": note,
-            "sample": _sample(body),
+            "sample": (sample or _sample(body)),
         }
         directory = os.path.dirname(os.path.abspath(self.path))
         os.makedirs(directory, exist_ok=True)

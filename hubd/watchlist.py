@@ -65,21 +65,25 @@ SITE_SOURCES = (
     {
         "url": "https://www.iana.org/assignments/uri-schemes/uri-schemes-1.csv",
         "topic": "iana/uri-schemes",
+        "store_body": True,
         "note": "реестр схем URI (CSV, 35 КБ): permanent/provisional/historical, в т.ч. отозванные схемы",
     },
     {
         "url": "https://www.iana.org/assignments/media-types/media-types.xml",
         "topic": "iana/media-types",
+        "store_body": True,
         "note": "реестр типов медиа (XML): obsolescent-типы, устаревшие application/* и их предки",
     },
     {
         "url": "https://www.iana.org/assignments/protocol-numbers/protocol-numbers.xml",
         "topic": "iana/protocol-numbers",
+        "store_body": True,
         "note": "реестр номеров IP-протоколов (XML, 43 КБ, last-modified): назначение и освобождение номера — статусный факт",
     },
     {
         "url": "https://www.rfc-editor.org/rfc-index.xml",
         "topic": "rfc-editor/rfc-index",
+        "store_body": True,
         "note": "индекс RFC (13,76 МБ, ETag): единственное машинное место со статусом каждого RFC — Historic/Obsoleted/Standard; тяжёлый, поэтому только условный GET",
     },
 )
@@ -93,13 +97,16 @@ def _host_allowed(host: str, include_all: bool) -> bool:
 
 
 def _add(sources: dict, url: str, topic: str, note: str, museum_id: str,
-         allow_volatile: bool = False) -> None:
+         allow_volatile: bool = False, store_body: bool = False) -> None:
     """Один адрес — один источник: разные записи архива просто добавляют себе в провенанс."""
     source = sources.get(url)
     if source is None:
         fresh: dict = {"url": url, "topic": topic, "note": note}
         if allow_volatile:
             fresh["allow_volatile"] = True
+        if store_body:
+            # реестр: без прошлого тела триаж получает «файл изменился», а не дифф
+            fresh["store_body"] = True
         fresh["museum"] = []
         sources[url] = fresh
         source = fresh
@@ -150,7 +157,8 @@ def from_museum(museum_dir: str, slugs: list[str] | None = None,
                                     "why": "хост не архивный (новости/вики): нужен --all-hosts"})
     for item in SITE_SOURCES:
         _add(sources, item["url"], item["topic"], item["note"], "",
-             allow_volatile=bool(item.get("allow_volatile")))
+             allow_volatile=bool(item.get("allow_volatile")),
+             store_body=bool(item.get("store_body")))
     return sorted(sources.values(), key=lambda s: (s["topic"], s["url"])), skipped
 
 

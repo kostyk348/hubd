@@ -242,7 +242,8 @@ def cmd_scan(args) -> int:
             for event in events:
                 if queue is not None:
                     if queue.add(topic=event["topic"], url=event["url"],
-                                 digest=event["hash"], body=event["payload"]) is None:
+                                 digest=event["hash"], body=event["payload"],
+                                 sample=event.get("diff", "")) is None:
                         dupes += 1
                     else:
                         fresh += 1
