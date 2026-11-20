@@ -107,18 +107,15 @@ def _projection_line(marker: str, doc: str, row: dict[str, str]) -> str:
     return "  ".join(parts)
 
 
-def project_rfc_index_status(previous: bytes, current: bytes,
-                             limit_lines: int = 80, limit_chars: int = 6000) -> str:
-    """Проекция статусов вместо сырого диффа: одна смена — одна-две строки.
+def project_from_tables(before: dict[str, dict], after: dict[str, dict],
+                        limit_lines: int = 80, limit_chars: int = 6000) -> str:
+    """Дифф двух проекций `doc-id -> поля`.
 
-    Сырой unified diff по 13,8 МБ XML тратит бюджет на теги и отступы: одна смена
-    статуса съедает 5-7 строк, и в 80 строк влезает восемь смен. Проекция
-    `doc-id -> поля` даёт строку, которая сама себя объясняет, и в тот же бюджет
-    влезает около сорока смен. Заголовок считает, сколько смен показано, а сколько
-    отрезано — иначе триаж не знает, попал ли в образец весь дифф.
+    Проекция весит 29 КБ против 2,3 МБ gz-тела и 13,8 МБ сырья (замер триажа),
+    поэтому её можно хранить и диффить на каждом обходе: одна смена — одна-две
+    строки, в бюджет 80 строк влезает ~40 смен против ~8 у сырого диффа.
+    Заголовок честно говорит, сколько смен показано, а сколько отрезано.
     """
-    before = parse_rfc_index(previous)
-    after = parse_rfc_index(current)
     if not before or not after:
         return ""
     fields = ("current-status", "publication-status", "stream", "title")
@@ -126,7 +123,8 @@ def project_rfc_index_status(previous: bytes, current: bytes,
     for doc in sorted(after):
         if doc not in before:
             changed.append((doc, {}, after[doc]))
-        elif any(before[doc].get(f) != after[doc].get(f) for f in fields):
+        elif any(f in before[doc] and f in after[doc] and before[doc][f] != after[doc][f]
+                 for f in fields):
             changed.append((doc, before[doc], after[doc]))
     for doc in sorted(before):
         if doc not in after:
@@ -139,23 +137,29 @@ def project_rfc_index_status(previous: bytes, current: bytes,
     for doc, old, new in changed:
         if old and new:
             pair = [_projection_line("-", doc, old), _projection_line("+", doc, new)]
-            if old.get("title") != new.get("title"):
+            if "title" in old and "title" in new and old["title"] != new["title"]:
                 # Заголовок печатаем только когда он изменился: иначе строка про
                 # статус выглядела бы неизменившейся, а смена была бы в title.
                 pair.append("   \u00ab%s\u00bb -> \u00ab%s\u00bb" % (
                     old.get("title", ""), new.get("title", "")))
         elif new:
-            pair = ["%s  новая запись  %s" % (_projection_line("+", doc, new), "")]
+            pair = ["%s  новая запись" % _projection_line("+", doc, new)]
         else:
-            pair = ["%s  запись исчезла  %s" % (_projection_line("-", doc, old), "")]
+            pair = ["%s  запись исчезла" % _projection_line("-", doc, old)]
         if len(lines) + len(pair) + 1 > limit_lines:
             break
         lines.extend(pair)
         shown += 1
     tail = "" if shown == total else ", обрезано"
     header = "изменено записей: %d (показано %d%s)" % (total, shown, tail)
-    cleaned = [line.replace("  \n", "\n").rstrip() for line in [header] + lines]
-    return "\n".join(cleaned)[:limit_chars]
+    return "\n".join([header] + [line.rstrip() for line in lines])[:limit_chars]
+
+
+def project_rfc_index_status(previous: bytes, current: bytes,
+                             limit_lines: int = 80, limit_chars: int = 6000) -> str:
+    """Совместимость: дифф по двум телам — когда кэша проекции ещё нет."""
+    return project_from_tables(parse_rfc_index(previous), parse_rfc_index(current),
+                               limit_lines, limit_chars)
 
 
 class Watcher:
@@ -223,6 +227,34 @@ class Watcher:
             fh.write(body)
         os.replace(tmp, path)               # атомарно: половина тела не должна попасть в базу
 
+    def _projection_path(self, url: str) -> str:
+        name = hashlib.sha1(url.encode("utf-8")).hexdigest()[:16] + ".projection.json.gz"
+        return os.path.join(os.path.dirname(os.path.abspath(self.state_path)), "bodies", name)
+
+    def read_projection(self, url: str) -> dict:
+        """Кэш проекции (29 КБ вместо 2,3 МБ gz-тела): производное от тела, не канон."""
+        path = self._projection_path(url)
+        if not os.path.exists(path):
+            return {}
+        try:
+            with gzip.open(path, "rt", encoding="utf-8") as fh:
+                data = json.load(fh)
+            return data if isinstance(data, dict) else {}
+        except (OSError, EOFError, ValueError):
+            return {}
+
+    def write_projection(self, url: str, table: dict) -> None:
+        if not table:
+            return
+        path = self._projection_path(url)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        lean = {doc: {k: v for k, v in row.items() if k not in ("title", "doc-id")}
+                for doc, row in table.items()}
+        with gzip.open(tmp, "wt", encoding="utf-8") as fh:
+            json.dump(lean, fh, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        os.replace(tmp, path)
+
     def diff(self, previous: bytes, current: bytes) -> str:
         """Дифф прошлого и нового тела — то, что триаж увидит вместо первых 300 байт.
 
@@ -285,6 +317,13 @@ class Watcher:
         он записывается в состояние и возвращается вызывающему как ошибка источника.
         """
         entry = self.state.setdefault(url, {"hash": None, "checks": 0, "changes": 0})
+        if projection and not self.read_projection(url):
+            # Базовая проекция из уже сохранённого тела: на сети это не стоит ничего,
+            # а первый же сдвиг статуса будет диффиться по кэшу, а не по двум телам.
+            stored = self.read_body(url)
+            if stored:
+                self.write_projection(url, parse_rfc_index(stored)
+                                      if projection == "rfc-index-status" else {})
         now = self.clock()
         quarantined_until = entry.get("quarantine_until") or 0
         if quarantined_until > now:
@@ -359,17 +398,29 @@ class Watcher:
             "error": "",
         })
         diff_text = ""
+        # Прошлое тело нужно ДО перезаписи: иначе диффать будет не с чем и триаж
+        # получит «файл изменился» вместо «строка X: Internet Standard -> Historic».
+        previous = self.read_body(url) if store_body else None
+        cache_missing = bool(projection) and not self.read_projection(url)
+        if projection and (changed or cache_missing):
+            # Кэш проекции живёт отдельно от тела: диффить 33 КБ дешевле, чем заново
+            # разбирать 13,8 МБ прошлого тела (замер: 0,63 с против 1,74 с). Тело
+            # остаётся каноном — первоисточником для цитаты, проекция производна.
+            # cache_missing — базовая съёмка проекции: иначе первый же сдвиг статуса
+            # стоил бы лишнего разбора прошлого тела (не ошибка, но вдвое дороже).
+            before = self.read_projection(url)
+            after = parse_rfc_index(body) if projection == "rfc-index-status" else {}
+            diff_text = project_from_tables(before, after, self.DIFF_LINES, self.DIFF_CHARS)
+            if not diff_text and previous is not None:
+                diff_text = project_rfc_index_status(previous, body,
+                                                     self.DIFF_LINES, self.DIFF_CHARS)
+            if not diff_text and previous is not None:
+                diff_text = self.diff(previous, body)   # фолбэк: CSV и прочее сырьё
+            if after and (changed or cache_missing):
+                self.write_projection(url, after)
+        elif changed and previous is not None:
+            diff_text = self.diff(previous, body)
         if store_body:
-            # Прошлое тело нужно ДО перезаписи: иначе диффать будет не с чем и триаж
-            # получит «файл изменился» вместо «строка X: Internet Standard -> Historic».
-            previous = self.read_body(url)
-            if changed and previous is not None:
-                diff_text = ""
-                if projection == "rfc-index-status":
-                    diff_text = project_rfc_index_status(previous, body,
-                                                         self.DIFF_LINES, self.DIFF_CHARS)
-                if not diff_text:
-                    diff_text = self.diff(previous, body)   # фолбэк: CSV и прочее сырьё
             self.write_body(url, body)
         if changed:
             entry["changes"] += 1
